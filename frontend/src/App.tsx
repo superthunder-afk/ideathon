@@ -71,6 +71,8 @@ function App() {
   const recognition = useRef<SpeechRecognitionLike | null>(null);
   const transcriptEnd = useRef<HTMLDivElement>(null);
   const remoteAudio = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const transcriptRef = useRef<TranscriptEntry[]>([]);
   const discussionTokenRef = useRef(0);
   const turnAbortRef = useRef<AbortController | null>(null);
@@ -120,6 +122,8 @@ function App() {
     recognition.current?.stop();
     window.speechSynthesis?.cancel();
     remoteAudio.current?.pause();
+    audioSourceRef.current?.stop();
+    void audioContextRef.current?.close();
   }, []);
 
   const addEntry = (entry: TranscriptEntry) => {
@@ -134,9 +138,17 @@ function App() {
     playbackDoneRef.current = null;
     window.speechSynthesis?.cancel();
     remoteAudio.current?.pause();
+    audioSourceRef.current?.stop();
+    audioSourceRef.current = null;
     if (remoteAudio.current) remoteAudio.current.src = '';
     setActiveSpeaker('');
     return discussionTokenRef.current;
+  };
+  const unlockAudio = () => {
+    if (!window.AudioContext) return;
+    const context = audioContextRef.current || new window.AudioContext();
+    audioContextRef.current = context;
+    if (context.state === 'suspended') void context.resume().catch(() => undefined);
   };
   const speak = async (text: string, speakerId: string, token: number) => {
     if (token !== discussionTokenRef.current) return false;
@@ -175,18 +187,40 @@ function App() {
         }
         if (response.ok) {
           const result = await response.json();
-          const audio = new Audio(`data:${result.mimeType};base64,${result.audioBase64}`);
-          remoteAudio.current = audio;
-          setActiveSpeaker(speakerId);
-          const playback = waitForPlayback();
-          const finishPlayback = playbackDoneRef.current;
-          audio.onended = () => {
-            if (token === discussionTokenRef.current) setActiveSpeaker('');
-            finishPlayback?.();
-          };
-          audio.onerror = () => finishPlayback?.();
-          await audio.play();
-          await playback;
+          const context = audioContextRef.current;
+          if (context) {
+            if (context.state === 'suspended') await context.resume();
+            const bytes = Uint8Array.from(atob(result.audioBase64), (character) => character.charCodeAt(0));
+            const buffer = await context.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+            if (controller.signal.aborted || token !== discussionTokenRef.current) return false;
+            const source = context.createBufferSource();
+            source.buffer = buffer;
+            source.connect(context.destination);
+            audioSourceRef.current = source;
+            setActiveSpeaker(speakerId);
+            const playback = waitForPlayback();
+            const finishPlayback = playbackDoneRef.current;
+            source.onended = () => {
+              if (audioSourceRef.current === source) audioSourceRef.current = null;
+              if (token === discussionTokenRef.current) setActiveSpeaker('');
+              finishPlayback?.();
+            };
+            source.start();
+            await playback;
+          } else {
+            const audio = new Audio(`data:${result.mimeType};base64,${result.audioBase64}`);
+            remoteAudio.current = audio;
+            setActiveSpeaker(speakerId);
+            const playback = waitForPlayback();
+            const finishPlayback = playbackDoneRef.current;
+            audio.onended = () => {
+              if (token === discussionTokenRef.current) setActiveSpeaker('');
+              finishPlayback?.();
+            };
+            audio.onerror = () => finishPlayback?.();
+            await audio.play();
+            await playback;
+          }
           return token === discussionTokenRef.current;
         }
         ttsAvailableRef.current = false;
@@ -273,6 +307,7 @@ function App() {
   };
 
   const openRoom = () => {
+    unlockAudio();
     const token = interruptAgents();
     transcriptRef.current = [];
     const openingByLanguage: Record<RoomLanguage, string> = {
@@ -293,6 +328,7 @@ function App() {
 
   const respond = async (studentText: string) => {
     if (!studentText.trim()) return;
+    unlockAudio();
     const token = interruptAgents();
     const studentLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - secondsRef.current, speakerId: 'student', speakerName: 'You', text: studentText.trim(), isStudent: true };
     addEntry(studentLine);
@@ -309,6 +345,7 @@ function App() {
   };
 
   const startListening = () => {
+    unlockAudio();
     const speechWindow = window as Window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
     const Constructor = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
     if (!Constructor) { setMicError(''); setMicState('unsupported'); return; }
