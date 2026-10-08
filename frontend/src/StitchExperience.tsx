@@ -35,6 +35,7 @@ interface StitchExperienceProps {
   setPaused: Dispatch<SetStateAction<boolean>>;
   speechOn: boolean;
   setSpeechOn: Dispatch<SetStateAction<boolean>>;
+  speechLoading: boolean;
   transcript: TranscriptEntry[];
   interim: string;
   micState: 'idle' | 'listening' | 'unsupported' | 'error';
@@ -62,7 +63,7 @@ export default function StitchExperience(props: StitchExperienceProps) {
   const {
     screen, topic, topics, customTopic, setCustomTopic, setTopic, selectedTopic, panel, panelSize, setPanelSize,
     format, setFormat, language, setLanguage, roomLanguages, speechEngine, setSpeechEngine, kokoroStatus,
-    ttsProvider, ttsAvailable, aiConnected, seconds, paused, setPaused, speechOn, setSpeechOn, transcript,
+    ttsProvider, ttsAvailable, aiConnected, seconds, paused, setPaused, speechOn, setSpeechOn, speechLoading, transcript,
     interim, micState, micError, activeSpeaker, studentWords, totalWords, report, reportLoading,
     onOpenRoom, onOpenSetup, onGoHome, onEndRoom, onReset, onStartListening, onStopListening, onInterruptAgents, onRespond,
   } = props;
@@ -102,6 +103,7 @@ export default function StitchExperience(props: StitchExperienceProps) {
       activeSpeaker={activeSpeaker}
       firstTurn={props.firstTurn}
       interim={interim}
+      speechLoading={speechLoading}
       micError={micError}
       micState={micState}
       onOpenRoom={onOpenRoom}

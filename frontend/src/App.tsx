@@ -79,6 +79,7 @@ function App() {
   const [seconds, setSeconds] = useState(8 * 60);
   const [paused, setPaused] = useState(false);
   const [speechOn, setSpeechOn] = useState(true);
+  const [speechLoading, setSpeechLoading] = useState(false);
   const [speechEngine, setSpeechEngine] = useState<SpeechEngine>('sarvam');
   const [kokoroStatus, setKokoroStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [aiConnected, setAiConnected] = useState(false);
@@ -163,6 +164,7 @@ function App() {
   };
   const interruptAgents = () => {
     discussionTokenRef.current += 1;
+    setSpeechLoading(false);
     turnAbortRef.current?.abort();
     speechAbortRef.current?.abort();
     playbackDoneRef.current?.();
@@ -231,6 +233,7 @@ function App() {
             if (token === discussionTokenRef.current) setActiveSpeaker('thinking');
             finishPlayback?.();
           };
+          setSpeechLoading(false);
           source.start();
           await playback;
           return token === discussionTokenRef.current;
@@ -283,6 +286,7 @@ function App() {
                 if (token === discussionTokenRef.current) setActiveSpeaker('thinking');
                 finishPlayback?.();
               };
+              setSpeechLoading(false);
               source.start();
               await playback;
             } else {
@@ -296,6 +300,7 @@ function App() {
                 finishPlayback?.();
               };
               audio.onerror = () => finishPlayback?.();
+              setSpeechLoading(false);
               await audio.play();
               await playback;
             }
@@ -313,6 +318,7 @@ function App() {
     }
     if (controller.signal.aborted || token !== discussionTokenRef.current) return false;
     if (!speechOn) {
+      setSpeechLoading(false);
       const playback = waitForPlayback();
       const finishPlayback = playbackDoneRef.current;
       window.setTimeout(() => finishPlayback?.(), Math.max(1100, text.trim().split(/\s+/).length * 260));
@@ -320,6 +326,7 @@ function App() {
       return token === discussionTokenRef.current;
     }
     if (!('speechSynthesis' in window)) {
+      setSpeechLoading(false);
       const playback = waitForPlayback();
       const finishPlayback = playbackDoneRef.current;
       setTimeout(() => finishPlayback?.(), Math.max(1100, text.trim().split(/\s+/).length * 260));
@@ -353,6 +360,7 @@ function App() {
       finishPlayback?.();
     };
     utterance.onerror = () => finishPlayback?.();
+    setSpeechLoading(false);
     window.speechSynthesis.speak(utterance);
     await playback;
     return token === discussionTokenRef.current;
@@ -394,6 +402,7 @@ function App() {
       if (reply) {
         const aiLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - secondsRef.current, speakerId: reply.speakerId, speakerName: reply.speakerName, text: reply.text, isStudent: false };
         addEntry(aiLine);
+        setSpeechLoading(speechOn);
         const completed = await speak(aiLine.text, aiLine.speakerId, token);
         if (!completed) return;
         await new Promise((resolve) => window.setTimeout(resolve, 950));
@@ -583,6 +592,7 @@ function App() {
       setPaused={setPaused}
       speechOn={speechOn}
       setSpeechOn={setSpeechOn}
+      speechLoading={speechLoading}
       transcript={transcript}
       interim={interim}
       micState={micState}

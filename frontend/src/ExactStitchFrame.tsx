@@ -10,6 +10,7 @@ type Props = {
   activeSpeaker: string;
   firstTurn: boolean;
   interim: string;
+  speechLoading: boolean;
   micError: string;
   micState: 'idle' | 'listening' | 'unsupported' | 'error';
   onOpenRoom: (topic?: string, panelSize?: number) => void;
@@ -159,6 +160,10 @@ function syncFirstTurnPrompt(document: Document, props: Props) {
     [data-gd-chat-turn][data-student="true"] [data-gd-chat-name] { color:#6d5a4b; }
     [data-gd-chat-draft] { border:1px dashed rgba(159,60,22,.3); background:#fffaf7; color:#78665c; font-style:italic; }
     [data-gd-chat-draft] [data-gd-chat-name] { color:#9f3c16; }
+    [data-gd-voice-loading] { display:flex; align-items:center; gap:8px; width:max-content; padding:7px 10px; margin:7px 0 3px 10px; color:#85766e; font:11px/1.3 Inter,system-ui,sans-serif; }
+    [data-gd-voice-spinner] { width:12px; height:12px; flex:none; border:1.5px solid rgba(159,60,22,.18); border-top-color:#9f3c16; border-radius:50%; animation:gd-voice-spin 720ms linear infinite; }
+    @keyframes gd-voice-spin { to { transform:rotate(360deg); } }
+    @media(prefers-reduced-motion:reduce) { [data-gd-voice-spinner] { animation:none; border-top-color:#9f3c16; border-right-color:#9f3c16; } }
     @keyframes gd-prompt-enter { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
     @media(max-width:640px) { [data-gd-first-turn-prompt] { top:8px; right:10px; } [data-gd-discussion-lower] { grid-template-columns:1fr; gap:10px; } [data-gd-live-chat] { max-height:120px; font-size:11px; } [data-gd-speaking-prompts] { display:grid; grid-template-columns:1fr; } }
   `;
@@ -199,7 +204,7 @@ function syncLiveTranscript(document: Document, props: Props) {
   const chat = lower.querySelector<HTMLElement>('[data-gd-live-chat]');
   if (!chat) return;
   const turns = props.transcript.slice(-5);
-  const key = `${turns.map((turn) => `${turn.id}:${turn.text}`).join('|')}|${props.interim}|${props.micState}`;
+  const key = `${turns.map((turn) => `${turn.id}:${turn.text}`).join('|')}|${props.interim}|${props.micState}|${props.speechLoading}`;
   if (chat.dataset.renderKey === key) return;
   chat.dataset.renderKey = key;
   chat.replaceChildren();
@@ -226,6 +231,19 @@ function syncLiveTranscript(document: Document, props: Props) {
     const text = document.createElement('span');
     text.textContent = props.interim;
     row.append(name, text);
+    chat.append(row);
+  }
+  if (props.speechLoading && turns.length > 0 && !turns[turns.length - 1].isStudent) {
+    const row = document.createElement('div');
+    row.dataset.gdVoiceLoading = 'true';
+    row.setAttribute('role', 'status');
+    row.setAttribute('aria-live', 'polite');
+    const spinner = document.createElement('span');
+    spinner.dataset.gdVoiceSpinner = 'true';
+    spinner.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.textContent = 'Preparing voice…';
+    row.append(spinner, label);
     chat.append(row);
   }
   chat.scrollTop = chat.scrollHeight;
@@ -381,7 +399,7 @@ export default function ExactStitchFrame(props: Props) {
   useEffect(() => {
     const document = frame.current?.contentDocument;
     if (document) syncLiveDocument(document, props);
-  }, [props.screen, props.selectedTopic, props.panelSize, props.transcript, props.seconds, props.micState, props.activeSpeaker, props.firstTurn, props.interim, props.micError, mobile]);
+  }, [props.screen, props.selectedTopic, props.panelSize, props.transcript, props.seconds, props.micState, props.activeSpeaker, props.firstTurn, props.interim, props.speechLoading, props.micError, mobile]);
 
   const onFrameLoad = () => {
     const document = frame.current?.contentDocument;
