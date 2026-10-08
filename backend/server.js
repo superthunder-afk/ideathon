@@ -11,8 +11,8 @@ const apiKey = process.env.GEMINI_API_KEY;
 const genai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 const parsedTtsDisabledUntil = Date.parse(process.env.GEMINI_TTS_DISABLED_UNTIL || '');
 const ttsDisabledUntil = Number.isFinite(parsedTtsDisabledUntil) ? parsedTtsDisabledUntil : 0;
-let ttsUnavailableReason = '';
-const ttsIsAvailable = () => Boolean(genai) && Date.now() >= ttsDisabledUntil && !ttsUnavailableReason;
+let ttsUnavailableUntil = 0;
+const ttsIsAvailable = () => Boolean(genai) && Date.now() >= ttsDisabledUntil && Date.now() >= ttsUnavailableUntil;
 const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',')
   .map((origin) => origin.trim())
@@ -140,7 +140,9 @@ app.post('/api/speech', async (request, response) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown error';
     const isRateLimited = /429|rate.?limit|quota/i.test(message);
-    ttsUnavailableReason = isRateLimited ? 'rate_limit' : 'temporary_error';
+    const retry = message.match(/retry in\s+(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?/i);
+    const retryMs = retry ? ((Number(retry[1] || 0) * 3600 + Number(retry[2] || 0) * 60 + Number(retry[3] || 0)) * 1000) : 0;
+    ttsUnavailableUntil = Date.now() + (retryMs || (isRateLimited ? 24 * 60 * 60 * 1000 : 60 * 1000));
     console.error('Gemini speech request failed:', message);
     response.status(isRateLimited ? 429 : 502).json({
       error: isRateLimited ? 'Gemini voice quota is unavailable. Using your device voice instead.' : 'Voice generation failed. Using your device voice instead.',

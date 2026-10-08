@@ -194,9 +194,23 @@ function App() {
       await playback;
       return token === discussionTokenRef.current;
     }
-    if (!('speechSynthesis' in window)) return true;
+    if (!('speechSynthesis' in window)) {
+      const playback = waitForPlayback();
+      const finishPlayback = playbackDoneRef.current;
+      setTimeout(() => finishPlayback?.(), Math.max(1100, text.trim().split(/\s+/).length * 260));
+      await playback;
+      return token === discussionTokenRef.current;
+    }
     const utterance = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices();
+    let voices = window.speechSynthesis.getVoices();
+    if (!voices.length) {
+      await Promise.race([
+        new Promise<void>((resolve) => window.speechSynthesis.addEventListener('voiceschanged', () => resolve(), { once: true })),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 500)),
+      ]);
+      voices = window.speechSynthesis.getVoices();
+    }
+    if (controller.signal.aborted || token !== discussionTokenRef.current) return false;
     const targetPrefix = language === 'hi' ? 'hi' : 'en';
     const matchingVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith(targetPrefix));
     const voiceCandidates = (matchingVoices.length ? matchingVoices : voices.filter((voice) => voice.lang.toLowerCase().startsWith('en')))
