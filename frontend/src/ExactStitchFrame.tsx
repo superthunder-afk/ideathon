@@ -156,6 +156,15 @@ function updateSpeakerStage(document: Document, speakerId: string, quoteText: st
   if (details && speakerId !== 'student' && speakerId !== 'thinking' && speakerId !== 'moderator' && sourceCard && stageImage) {
     const sourceImage = sourceCard.querySelector<HTMLElement>('[style*="background-image"]');
     if (sourceImage) {
+      const stageImageFrame = stageImage.parentElement as HTMLElement | null;
+      if (stageImageFrame) {
+        const frameSize = stageImageFrame.getBoundingClientRect();
+        if (frameSize.width < 32 || frameSize.height < 32) {
+          stageImageFrame.style.width = '88px';
+          stageImageFrame.style.height = '88px';
+          stageImageFrame.style.flexShrink = '0';
+        }
+      }
       if (document.documentElement.dataset.gdActiveSpeaker !== speakerId) animateAvatarHandoff(document, sourceImage, stageImage, stageCard);
       stageImage.style.backgroundImage = sourceImage.style.backgroundImage;
       stageImage.style.backgroundPosition = sourceImage.style.backgroundPosition;
@@ -165,7 +174,7 @@ function updateSpeakerStage(document: Document, speakerId: string, quoteText: st
   }
   document.documentElement.dataset.gdActiveSpeaker = speakerId;
 
-  const status = labels.find((node) => ['Speaking now', 'The Challenger · Speaking'].includes(node.textContent?.trim() || ''));
+  const status = labels.find((node) => ['Speaking now', 'Choosing next speaker', 'The Challenger · Speaking'].includes(node.textContent?.trim() || ''));
   if (status) status.textContent = speakerId === 'thinking' ? 'Choosing next speaker' : speakerId === 'student' ? 'Your turn' : 'Speaking now';
   const css = document.getElementById('gd-stage-motion-style') || document.createElement('style');
   css.id = 'gd-stage-motion-style';
