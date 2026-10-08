@@ -8,6 +8,8 @@ const port = Number(process.env.PORT || 4000);
 const textModel = process.env.GEMINI_TEXT_MODEL || 'gemini-3.8-flash';
 const geminiTtsModel = process.env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-lite-tts';
 const apiKey = process.env.GEMINI_API_KEY;
+const sarvamApiKey = process.env.SARVAM_API_KEY;
+const sarvamTtsModel = process.env.SARVAM_TTS_MODEL || 'bulbul:v3';
 const openRouterApiKey = process.env.OPENROUTER_API_KEY;
 const openRouterTtsModel = process.env.OPENROUTER_TTS_MODEL || 'fish-audio/s2.1-pro-free:free';
 const genai = apiKey ? new GoogleGenAI({ apiKey }) : null;
@@ -15,8 +17,8 @@ const parsedTtsDisabledUntil = Date.parse(process.env.GEMINI_TTS_DISABLED_UNTIL 
 const ttsDisabledUntil = Number.isFinite(parsedTtsDisabledUntil) ? parsedTtsDisabledUntil : 0;
 let ttsUnavailableUntil = 0;
 const geminiTtsIsAvailable = () => Boolean(genai) && Date.now() >= ttsDisabledUntil && Date.now() >= ttsUnavailableUntil;
-const ttsIsAvailable = () => Boolean(openRouterApiKey) || geminiTtsIsAvailable();
-const activeTtsProvider = () => openRouterApiKey ? 'openrouter' : geminiTtsIsAvailable() ? 'gemini' : 'device';
+const ttsIsAvailable = () => Boolean(sarvamApiKey) || Boolean(openRouterApiKey) || geminiTtsIsAvailable();
+const activeTtsProvider = () => sarvamApiKey ? 'sarvam' : openRouterApiKey ? 'openrouter' : geminiTtsIsAvailable() ? 'gemini' : 'device';
 const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',')
   .map((origin) => origin.trim())
@@ -35,27 +37,27 @@ app.use(rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', leg
 
 const agents = {
   dominator: {
-    name: 'Rohan', voice: 'Fenrir', fishVoice: '79d0bd3e4e5444b18f7b6d89b5927bf1', fishStyle: '[confident, assertive, energetic]', style: 'conversational, assured, relaxed pace',
+    name: 'Rohan', voice: 'Fenrir', sarvamVoice: 'rohan', fishVoice: '79d0bd3e4e5444b18f7b6d89b5927bf1', fishStyle: '[confident, assertive, energetic]', style: 'conversational, assured, relaxed pace',
     persona: 'You speak up early, take clear positions, and challenge ideas respectfully. Do not dominate or talk over others.',
   },
   data_driven: {
-    name: 'Ananya', voice: 'Kore', fishVoice: '933563129e564b19a115bedd57b7406a', fishStyle: '[clear, thoughtful, precise]', style: 'conversational, thoughtful, precise',
+    name: 'Ananya', voice: 'Kore', sarvamVoice: 'neha', fishVoice: '933563129e564b19a115bedd57b7406a', fishStyle: '[clear, thoughtful, precise]', style: 'conversational, thoughtful, precise',
     persona: 'You ask for examples and evidence. Never invent numbers, quotes, studies, or facts. Say when evidence is uncertain.',
   },
   quiet_thinker: {
-    name: 'Vikram', voice: 'Charon', fishVoice: 'bf322df2096a46f18c579d0baa36f41d', fishStyle: '[gentle, reflective, unhurried]', style: 'conversational, gentle, unhurried',
+    name: 'Vikram', voice: 'Charon', sarvamVoice: 'rahul', fishVoice: 'bf322df2096a46f18c579d0baa36f41d', fishStyle: '[gentle, reflective, unhurried]', style: 'conversational, gentle, unhurried',
     persona: 'You speak less often, but add a concise synthesis or a useful overlooked point when invited by the discussion.',
   },
   wanderer: {
-    name: 'Pooja', voice: 'Leda', fishVoice: '9a9cf47702da476aa4629e2506d4a857', fishStyle: '[curious, expressive, warm]', style: 'conversational, curious, warm',
+    name: 'Pooja', voice: 'Leda', sarvamVoice: 'pooja', fishVoice: '9a9cf47702da476aa4629e2506d4a857', fishStyle: '[curious, expressive, warm]', style: 'conversational, curious, warm',
     persona: 'You offer a short, memorable analogy or wider angle, then connect it back to the topic.',
   },
   connector: {
-    name: 'Mira', voice: 'Aoede', fishVoice: 'e3cd384158934cc9a01029cd7d278634', fishStyle: '[warm, collaborative, friendly]', style: 'conversational, warm, collaborative',
+    name: 'Mira', voice: 'Aoede', sarvamVoice: 'simran', fishVoice: 'e3cd384158934cc9a01029cd7d278634', fishStyle: '[warm, collaborative, friendly]', style: 'conversational, warm, collaborative',
     persona: 'You build on a specific previous point and connect different views. Do not simply agree with the latest speaker.',
   },
   moderator: {
-    name: 'Dr. Sharma', voice: 'Orus', fishVoice: '536d3a5e000945adb7038665781a4aca', fishStyle: '[composed, clear, reassuring]', style: 'conversational, composed, brief',
+    name: 'Dr. Sharma', voice: 'Orus', sarvamVoice: 'amit', fishVoice: '536d3a5e000945adb7038665781a4aca', fishStyle: '[composed, clear, reassuring]', style: 'conversational, composed, brief',
     persona: 'You are a neutral discussion moderator. Keep the room on topic, invite quieter speakers, and speak briefly.',
   },
 };
@@ -64,7 +66,7 @@ const onlyString = (value, max) => typeof value === 'string' && value.trim().len
 const getText = (response) => response?.text || '';
 
 app.get('/health', (_request, response) => {
-  response.json({ ok: true, aiConfigured: Boolean(genai), ttsAvailable: ttsIsAvailable(), ttsProvider: activeTtsProvider(), textModel, ttsModel: openRouterTtsModel });
+  response.json({ ok: true, aiConfigured: Boolean(genai), ttsAvailable: ttsIsAvailable(), ttsProvider: activeTtsProvider(), textModel, ttsModel: sarvamApiKey ? sarvamTtsModel : openRouterTtsModel });
 });
 
 app.post('/api/turn', async (request, response) => {
@@ -120,6 +122,36 @@ app.post('/api/speech', async (request, response) => {
   const { text, speakerId = 'moderator', language = 'en-hi' } = request.body || {};
   if (!onlyString(text, 700)) return response.status(400).json({ error: 'Speech text must be under 700 characters.' });
   if (!agents[speakerId]) return response.status(400).json({ error: 'Unknown speaker.' });
+  if (sarvamApiKey) {
+    try {
+      const hasHindiScript = /[\u0900-\u097F]/u.test(text);
+      const sarvamResponse = await fetch('https://api.sarvam.ai/text-to-speech', {
+        method: 'POST',
+        headers: { 'api-subscription-key': sarvamApiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: text.trim(),
+          model: sarvamTtsModel,
+          speaker: agents[speakerId].sarvamVoice,
+          language_code: language === 'hi' || (language === 'en-hi' && hasHindiScript) ? 'hi-IN' : 'en-IN',
+          speech_sample_rate: 24000,
+          output_audio_codec: 'wav',
+          temperature: 0.6,
+        }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      const result = await sarvamResponse.json().catch(() => ({}));
+      const audio = Array.isArray(result.audios) ? result.audios[0] : '';
+      if (!sarvamResponse.ok || !onlyString(audio, 4_000_000)) {
+        throw new Error(`Sarvam TTS returned HTTP ${sarvamResponse.status}: ${String(result.error?.message || result.error || 'no audio').slice(0, 180)}`);
+      }
+      return response.json({ mimeType: 'audio/wav', audioBase64: audio, ttsProvider: 'sarvam' });
+    } catch (error) {
+      console.error('Sarvam speech request failed:', error instanceof Error ? error.message : 'unknown error');
+      if (!openRouterApiKey && !geminiTtsIsAvailable()) {
+        return response.status(502).json({ error: 'Sarvam voice could not generate this reply. Using your device voice instead.', code: 'tts_error' });
+      }
+    }
+  }
   if (openRouterApiKey) {
     try {
       const fishResponse = await fetch('https://openrouter.ai/api/v1/audio/speech', {
