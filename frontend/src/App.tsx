@@ -48,18 +48,18 @@ function makeFallbackReply(panel: Agent[], transcript: TranscriptEntry[], turn: 
   const lastStudent = [...transcript].reverse().find((line) => line.isStudent);
   const speaker = panel.find((agent) => agent.id !== lastTurn?.speakerId) || panel[turn % Math.max(1, panel.length)];
   if (lastTurn?.isStudent && lastStudent) {
-    const point = lastStudent.text.trim().replace(/[.!?]+$/, '').split(/\s+/).slice(0, 12).join(' ');
+    const point = lastStudent.text.trim().replace(/[.!?]+$/, '').split(/\s+/).slice(0, 7).join(' ');
     return {
       speakerId: speaker.id,
       speakerName: speaker.name,
-      text: `Your point about ${point} makes sense. I’d also consider who could be left out and what support would help them benefit.`,
+      text: `Your point about ${point} makes sense. What support would help people who might be left out?`,
     };
   }
   const previousName = lastTurn?.speakerName || 'the previous speaker';
   return {
     speakerId: speaker.id,
     speakerName: speaker.name,
-    text: `Building on ${previousName}’s point, we should think about how that idea would work in practice and who it would help most.`,
+    text: `Building on ${previousName}’s point, how would that work in practice?`,
   };
 }
 
@@ -90,7 +90,9 @@ function App() {
   const autoListenRef = useRef(false);
   const studentSpeechActiveRef = useRef(false);
   const interimSpeechRef = useRef('');
+  const pendingFinalSpeechRef = useRef('');
   const userSpeechTimeoutRef = useRef<number | null>(null);
+  const finalSpeechTimeoutRef = useRef<number | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const micVadFrameRef = useRef<number | null>(null);
@@ -154,6 +156,7 @@ function App() {
     micSourceRef.current?.disconnect();
     micStreamRef.current?.getTracks().forEach((track) => track.stop());
     if (userSpeechTimeoutRef.current !== null) window.clearTimeout(userSpeechTimeoutRef.current);
+    if (finalSpeechTimeoutRef.current !== null) window.clearTimeout(finalSpeechTimeoutRef.current);
     window.speechSynthesis?.cancel();
     remoteAudio.current?.pause();
     audioSourceRef.current?.stop();
@@ -414,17 +417,22 @@ function App() {
       if (!studentSpeechActiveRef.current || !roomActiveRef.current) return;
       studentSpeechActiveRef.current = false;
       const draft = interimSpeechRef.current.trim();
+      const finalDraft = pendingFinalSpeechRef.current.trim();
       setInterim('');
       interimSpeechRef.current = '';
-      if (draft) void respond(draft);
+      pendingFinalSpeechRef.current = '';
+      if (draft || finalDraft) void respond([finalDraft, draft].filter(Boolean).join(' '));
       else setActiveSpeaker('student');
     }, 8000);
   };
   const clearStudentSpeech = () => {
     studentSpeechActiveRef.current = false;
     interimSpeechRef.current = '';
+    pendingFinalSpeechRef.current = '';
     if (userSpeechTimeoutRef.current !== null) window.clearTimeout(userSpeechTimeoutRef.current);
     userSpeechTimeoutRef.current = null;
+    if (finalSpeechTimeoutRef.current !== null) window.clearTimeout(finalSpeechTimeoutRef.current);
+    finalSpeechTimeoutRef.current = null;
   };
   const startMicLevelMonitor = async () => {
     if (!navigator.mediaDevices?.getUserMedia) return;
@@ -482,7 +490,7 @@ function App() {
     sessionPanelRef.current = agents.slice(0, panelSizeOverride ?? panelSize);
     interruptAgents();
     transcriptRef.current = [];
-    setTranscript([]); setInterim(''); interimSpeechRef.current = ''; setFirstTurn(true);
+    setTranscript([]); setInterim(''); interimSpeechRef.current = ''; pendingFinalSpeechRef.current = ''; setFirstTurn(true);
     setSeconds(8 * 60); secondsRef.current = 8 * 60; setPaused(false); setScreen('room'); roomActiveRef.current = true; setActiveSpeaker('student');
     /* Begin is a deliberate user gesture, so start hands-free speech capture here. */
     startListening();
@@ -512,6 +520,7 @@ function App() {
       instance.continuous = true; instance.interimResults = true;
       instance.lang = 'en-IN';
       instance.onresult = (event) => {
+        if (!autoListenRef.current) return;
         const finalParts: string[] = []; const interimParts: string[] = [];
         const firstChangedResult = typeof event.resultIndex === 'number' ? event.resultIndex : 0;
         for (let i = firstChangedResult; i < event.results.length; i += 1) {
@@ -523,10 +532,32 @@ function App() {
         }
         const finalText = finalParts.join(' ').replace(/\s+/g, ' ').trim();
         const interimText = interimParts.join(' ').replace(/\s+/g, ' ').trim();
-        setInterim(interimText);
+        if (finalText) {
+          const pending = pendingFinalSpeechRef.current.trim();
+          const normalizedPending = pending.toLocaleLowerCase();
+          const normalizedFinal = finalText.toLocaleLowerCase();
+          pendingFinalSpeechRef.current = normalizedFinal.startsWith(normalizedPending) && pending
+            ? finalText
+            : pending && !normalizedPending.endsWith(normalizedFinal) ? `${pending} ${finalText}` : pending || finalText;
+        }
         interimSpeechRef.current = interimText;
-        if (interimText) markStudentSpeech();
-        if (finalText) { setInterim(''); interimSpeechRef.current = ''; void respond(finalText); }
+        const pending = pendingFinalSpeechRef.current.trim();
+        const visibleDraft = interimText.toLocaleLowerCase().startsWith(pending.toLocaleLowerCase()) && pending
+          ? interimText
+          : [pending, interimText].filter(Boolean).join(' ');
+        setInterim(visibleDraft);
+        if (interimText || finalText) markStudentSpeech();
+        if (finalText) {
+          if (finalSpeechTimeoutRef.current !== null) window.clearTimeout(finalSpeechTimeoutRef.current);
+          finalSpeechTimeoutRef.current = window.setTimeout(() => {
+            const spokenTurn = pendingFinalSpeechRef.current.trim();
+            pendingFinalSpeechRef.current = '';
+            interimSpeechRef.current = '';
+            setInterim('');
+            finalSpeechTimeoutRef.current = null;
+            if (spokenTurn) void respond(spokenTurn);
+          }, 1050);
+        }
       };
       instance.onerror = (event) => {
         const messages: Record<string, string> = {
@@ -561,7 +592,7 @@ function App() {
   };
 
   const stopListening = (_resumeDiscussion = false) => {
-    const draft = interimSpeechRef.current.trim();
+    const draft = [pendingFinalSpeechRef.current.trim(), interimSpeechRef.current.trim()].filter(Boolean).join(' ');
     autoListenRef.current = false;
     stopMicLevelMonitor();
     clearStudentSpeech();

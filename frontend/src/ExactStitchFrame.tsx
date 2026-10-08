@@ -148,7 +148,11 @@ function syncFirstTurnPrompt(document: Document, props: Props) {
     [data-gd-first-turn-prompt] > div { display:flex; flex-direction:column; gap:2px; }
     [data-gd-first-turn-prompt] strong { color:#9f3c16; font-size:12px; }
     [data-gd-first-turn-prompt] button { flex:0 0 22px; border:0; background:transparent; color:#857a75; font:20px/1 system-ui,sans-serif; cursor:pointer; }
-    [data-gd-live-chat] { width:min(660px,calc(100% - 16px)); max-height:148px; overflow:auto; margin:18px auto 0; padding:10px 12px; border-top:1px solid rgba(138,114,106,.22); text-align:left; font:12px/1.45 Inter,system-ui,sans-serif; scrollbar-width:thin; }
+    [data-gd-discussion-lower] { width:min(900px,calc(100% - 32px)); display:grid; grid-template-columns:minmax(0,1fr) 220px; gap:16px; align-items:start; margin:18px auto 0; text-align:left; font:12px/1.45 Inter,system-ui,sans-serif; }
+    [data-gd-live-chat] { max-height:148px; overflow:auto; padding:10px 12px; border-top:1px solid rgba(138,114,106,.22); text-align:left; font:12px/1.45 Inter,system-ui,sans-serif; scrollbar-width:thin; }
+    [data-gd-speaking-prompts] { display:flex; flex-direction:column; gap:8px; padding:12px; border:1px solid rgba(138,114,106,.18); border-radius:12px; background:rgba(255,255,255,.72); color:#62534c; }
+    [data-gd-prompts-title] { color:#9f3c16; font-size:10px; font-weight:700; letter-spacing:.1em; }
+    [data-gd-prompt-item] { padding:8px 9px; border-radius:8px; background:#f8f4f1; line-height:1.4; }
     [data-gd-chat-turn] { padding:8px 10px; margin:5px 0; border-radius:9px; background:#f6f3f2; color:#453a35; }
     [data-gd-chat-turn][data-student="true"] { background:#f9eee8; margin-left:22px; }
     [data-gd-chat-name] { display:block; margin-bottom:2px; color:#9f3c16; font-size:10px; font-weight:650; }
@@ -156,7 +160,7 @@ function syncFirstTurnPrompt(document: Document, props: Props) {
     [data-gd-chat-draft] { border:1px dashed rgba(159,60,22,.3); background:#fffaf7; color:#78665c; font-style:italic; }
     [data-gd-chat-draft] [data-gd-chat-name] { color:#9f3c16; }
     @keyframes gd-prompt-enter { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
-    @media(max-width:640px) { [data-gd-first-turn-prompt] { top:8px; right:10px; } [data-gd-live-chat] { max-height:120px; font-size:11px; } }
+    @media(max-width:640px) { [data-gd-first-turn-prompt] { top:8px; right:10px; } [data-gd-discussion-lower] { grid-template-columns:1fr; gap:10px; } [data-gd-live-chat] { max-height:120px; font-size:11px; } [data-gd-speaking-prompts] { display:grid; grid-template-columns:1fr; } }
   `;
   if (!styles.isConnected) document.head.append(styles);
 }
@@ -165,15 +169,35 @@ function syncLiveTranscript(document: Document, props: Props) {
   const quote = document.querySelector('main blockquote');
   const host = quote?.parentElement;
   if (!host) return;
-  let chat = host.querySelector<HTMLElement>('[data-gd-live-chat]');
-  if (!chat) {
-    chat = document.createElement('div');
+  let lower = host.querySelector<HTMLElement>('[data-gd-discussion-lower]');
+  if (!lower) {
+    lower = document.createElement('section');
+    lower.dataset.gdDiscussionLower = 'true';
+    const chatPanel = document.createElement('div');
+    chatPanel.dataset.gdChatPanel = 'true';
+    const chat = document.createElement('div');
     chat.dataset.gdLiveChat = 'true';
     chat.setAttribute('role', 'log');
     chat.setAttribute('aria-label', 'Live discussion transcript');
     chat.setAttribute('aria-live', 'polite');
-    host.append(chat);
+    chatPanel.append(chat);
+    const aside = document.createElement('aside');
+    aside.dataset.gdSpeakingPrompts = 'true';
+    const title = document.createElement('span');
+    title.dataset.gdPromptsTitle = 'true';
+    title.textContent = 'TRY SAYING';
+    aside.append(title);
+    for (const phrase of ['I see it differently because…', 'Can you give a real example?', 'Building on that, what about…?']) {
+      const item = document.createElement('div');
+      item.dataset.gdPromptItem = 'true';
+      item.textContent = phrase;
+      aside.append(item);
+    }
+    lower.append(chatPanel, aside);
+    host.append(lower);
   }
+  const chat = lower.querySelector<HTMLElement>('[data-gd-live-chat]');
+  if (!chat) return;
   const turns = props.transcript.slice(-5);
   const key = `${turns.map((turn) => `${turn.id}:${turn.text}`).join('|')}|${props.interim}|${props.micState}`;
   if (chat.dataset.renderKey === key) return;
