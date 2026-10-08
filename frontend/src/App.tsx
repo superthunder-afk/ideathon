@@ -64,6 +64,7 @@ function App() {
   const [currentAgent, setCurrentAgent] = useState(0);
   const [speechOn, setSpeechOn] = useState(true);
   const [aiConnected, setAiConnected] = useState(false);
+  const [ttsAvailable, setTtsAvailable] = useState(false);
   const [report, setReport] = useState<GDReport | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const recognition = useRef<SpeechRecognitionLike | null>(null);
@@ -76,6 +77,7 @@ function App() {
   const playbackDoneRef = useRef<(() => void) | null>(null);
   const secondsRef = useRef(seconds);
   const roomActiveRef = useRef(screen === 'room');
+  const ttsAvailableRef = useRef(false);
   secondsRef.current = seconds;
   roomActiveRef.current = screen === 'room';
   const selectedTopic = customTopic.trim() || topic;
@@ -102,8 +104,13 @@ function App() {
     const controller = new AbortController();
     fetch(`${API_BASE_URL}/health`, { signal: controller.signal })
       .then((result) => result.ok ? result.json() : null)
-      .then((status) => setAiConnected(Boolean(status?.aiConfigured)))
-      .catch(() => setAiConnected(false));
+      .then((status) => {
+        setAiConnected(Boolean(status?.aiConfigured));
+        const voiceAvailable = Boolean(status?.ttsAvailable);
+        ttsAvailableRef.current = voiceAvailable;
+        setTtsAvailable(voiceAvailable);
+      })
+      .catch(() => { setAiConnected(false); ttsAvailableRef.current = false; setTtsAvailable(false); });
     return () => controller.abort();
   }, []);
 
@@ -147,7 +154,7 @@ function App() {
     });
     window.speechSynthesis?.cancel();
     remoteAudio.current?.pause();
-    if (speechOn && aiConnected && API_BASE_URL) {
+    if (speechOn && aiConnected && ttsAvailableRef.current && API_BASE_URL) {
       try {
         const response = await fetch(`${API_BASE_URL}/api/speech`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -170,8 +177,12 @@ function App() {
           await playback;
           return token === discussionTokenRef.current;
         }
+        ttsAvailableRef.current = false;
+        setTtsAvailable(false);
       } catch {
         if (controller.signal.aborted) return false;
+        ttsAvailableRef.current = false;
+        setTtsAvailable(false);
         /* Fall back to the browser voice if the speech API is unavailable. */
       }
     }
@@ -186,14 +197,14 @@ function App() {
     if (!('speechSynthesis' in window)) return true;
     const utterance = new SpeechSynthesisUtterance(text);
     const voices = window.speechSynthesis.getVoices();
-    const targetLocale = language === 'hi' ? 'hi-in' : 'en-in';
-    const indianVoice = voices.find((voice) => voice.lang.toLowerCase() === targetLocale);
+    const targetPrefix = language === 'hi' ? 'hi' : 'en';
+    const matchingVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith(targetPrefix));
+    const voiceCandidates = (matchingVoices.length ? matchingVoices : voices.filter((voice) => voice.lang.toLowerCase().startsWith('en')))
+      .sort((first, second) => Number(/natural|neural|online|enhanced/i.test(second.name)) - Number(/natural|neural|online|enhanced/i.test(first.name)));
     const index = agents.findIndex((agent) => agent.id === speakerId);
-    const voiceCandidates = voices.filter((voice) => voice.lang.toLowerCase().startsWith('en'));
-    if (indianVoice) utterance.voice = indianVoice;
-    else if (voiceCandidates.length) utterance.voice = voiceCandidates[Math.max(0, index) % voiceCandidates.length];
-    utterance.rate = speakerId === 'dominator' ? 1.06 : speakerId === 'quiet_thinker' ? 0.92 : 0.98;
-    utterance.pitch = speakerId === 'wanderer' ? 1.14 : speakerId === 'data_driven' ? 0.92 : 1;
+    if (voiceCandidates.length) utterance.voice = voiceCandidates[Math.max(0, index) % voiceCandidates.length];
+    utterance.rate = speakerId === 'dominator' ? 1.04 : speakerId === 'quiet_thinker' ? 0.94 : speakerId === 'wanderer' ? 1.03 : 0.98;
+    utterance.pitch = speakerId === 'wanderer' ? 1.1 : speakerId === 'data_driven' ? 0.96 : speakerId === 'quiet_thinker' ? 0.97 : 1;
     utterance.onstart = () => setActiveSpeaker(speakerId);
     const playback = waitForPlayback();
     const finishPlayback = playbackDoneRef.current;
@@ -374,7 +385,7 @@ function App() {
             <div className={`participant-card moderator-card ${activeSpeaker === 'moderator' ? 'speaking' : ''}`}><div className="moderator-avatar">DS</div><div className="participant-info"><strong>Dr. Sharma</strong><span>AI moderator</span></div><span className="presence" /></div>
           </div><div className="room-note"><span className="note-icon"><Headphones size={15} /></span><p>The AI keeps the discussion moving. Tap the mic to take the floor; it pauses their voices right away.</p></div><div className="speech-toggle"><span><Volume2 size={15} /> Spoken replies</span><button className={`toggle ${speechOn ? 'on' : ''}`} onClick={() => setSpeechOn((value) => !value)} aria-label="Toggle spoken replies"><i /></button></div></aside>
 
-          <section className="discussion-panel"><div className="discussion-toolbar"><div><span className="live-dot" /> <strong>LIVE DISCUSSION</strong><span className="toolbar-sep">·</span><span>{transcript.filter((line) => line.isStudent).length} of your turns</span></div><span className="demo-chip">{aiConnected ? 'GEMINI VOICE' : 'DEMO RESPONSES'}</span></div><div className="transcript" aria-live="polite">{transcript.map((line) => { const agent = agents.find((item) => item.id === line.speakerId); return <article key={line.id} className={`transcript-message ${line.isStudent ? 'student-message' : ''}`}><div className="message-avatar">{agent ? <Avatar agent={agent} small /> : <div className="moderator-avatar tiny">DS</div>}</div><div className="message-body"><div className="message-meta"><strong>{line.speakerName}</strong>{line.speakerId === 'moderator' && <span className="role-pill">MODERATOR</span>}<time>{formatTime(line.timestamp)}</time></div><p>{line.text}</p></div></article>; })}{interim && <div className="interim-caption"><Mic size={14} /> {interim}<span>Listening…</span></div>}{activeSpeaker === 'thinking' && <div className="thinking"><span /><span /><span /> Someone is gathering their thoughts</div>}<div ref={transcriptEnd} /></div><div className="talk-bar">{micState === 'unsupported' && <p className="mic-notice">Live browser speech recognition is unavailable here. Try the latest Chrome or Brave, or use the text box for now.</p>}{micState === 'error' && <p className="mic-notice error">{micError || 'Speech recognition failed. Try Chrome or type your response.'}</p>}{micError && micState === 'idle' && <p className="mic-notice error">{micError}</p>}<div className="input-row"><button className={`mic-button ${micState === 'listening' ? 'recording' : ''}`} onClick={micState === 'listening' ? () => stopListening(true) : startListening} aria-label={micState === 'listening' ? 'Stop microphone' : 'Take the floor with microphone'}>{micState === 'listening' ? <MicOff size={18} /> : <Mic size={18} />}</button><input id="typed-turn" placeholder={micState === 'listening' ? 'Listening — speak your point…' : 'Or type a point to join the discussion…'} onFocus={interruptAgents} onKeyDown={(event) => { if (event.key === 'Enter') { const input = event.currentTarget; void respond(input.value); input.value = ''; } }} /><button className="send-button" aria-label="Send message" onClick={() => { const input = document.getElementById('typed-turn') as HTMLInputElement; if (input.value.trim()) { void respond(input.value); input.value = ''; } }}><ArrowRight size={18} /></button></div><div className="input-hint"><span><span className="shortcut">MIC</span> Tap to take the floor <i>·</i> or type your response</span><button onClick={endRoom}>End session <ArrowRight size={13} /></button></div></div></section>
+          <section className="discussion-panel"><div className="discussion-toolbar"><div><span className="live-dot" /> <strong>LIVE DISCUSSION</strong><span className="toolbar-sep">·</span><span>{transcript.filter((line) => line.isStudent).length} of your turns</span></div><span className="demo-chip">{aiConnected ? (ttsAvailable ? 'GEMINI VOICE' : 'DEVICE VOICE') : 'DEMO RESPONSES'}</span></div><div className="transcript" aria-live="polite">{transcript.map((line) => { const agent = agents.find((item) => item.id === line.speakerId); return <article key={line.id} className={`transcript-message ${line.isStudent ? 'student-message' : ''}`}><div className="message-avatar">{agent ? <Avatar agent={agent} small /> : <div className="moderator-avatar tiny">DS</div>}</div><div className="message-body"><div className="message-meta"><strong>{line.speakerName}</strong>{line.speakerId === 'moderator' && <span className="role-pill">MODERATOR</span>}<time>{formatTime(line.timestamp)}</time></div><p>{line.text}</p></div></article>; })}{interim && <div className="interim-caption"><Mic size={14} /> {interim}<span>Listening…</span></div>}{activeSpeaker === 'thinking' && <div className="thinking"><span /><span /><span /> Someone is gathering their thoughts</div>}<div ref={transcriptEnd} /></div><div className="talk-bar">{micState === 'unsupported' && <p className="mic-notice">Live browser speech recognition is unavailable here. Try the latest Chrome or Brave, or use the text box for now.</p>}{micState === 'error' && <p className="mic-notice error">{micError || 'Speech recognition failed. Try Chrome or type your response.'}</p>}{micError && micState === 'idle' && <p className="mic-notice error">{micError}</p>}<div className="input-row"><button className={`mic-button ${micState === 'listening' ? 'recording' : ''}`} onClick={micState === 'listening' ? () => stopListening(true) : startListening} aria-label={micState === 'listening' ? 'Stop microphone' : 'Take the floor with microphone'}>{micState === 'listening' ? <MicOff size={18} /> : <Mic size={18} />}</button><input id="typed-turn" placeholder={micState === 'listening' ? 'Listening — speak your point…' : 'Or type a point to join the discussion…'} onFocus={interruptAgents} onKeyDown={(event) => { if (event.key === 'Enter') { const input = event.currentTarget; void respond(input.value); input.value = ''; } }} /><button className="send-button" aria-label="Send message" onClick={() => { const input = document.getElementById('typed-turn') as HTMLInputElement; if (input.value.trim()) { void respond(input.value); input.value = ''; } }}><ArrowRight size={18} /></button></div><div className="input-hint"><span><span className="shortcut">MIC</span> Tap to take the floor <i>·</i> or type your response</span><button onClick={endRoom}>End session <ArrowRight size={13} /></button></div></div></section>
         </div>
       </section>}
 

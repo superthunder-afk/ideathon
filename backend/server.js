@@ -9,6 +9,10 @@ const textModel = process.env.GEMINI_TEXT_MODEL || 'gemini-3.8-flash';
 const ttsModel = process.env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-lite-tts';
 const apiKey = process.env.GEMINI_API_KEY;
 const genai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+const parsedTtsDisabledUntil = Date.parse(process.env.GEMINI_TTS_DISABLED_UNTIL || '');
+const ttsDisabledUntil = Number.isFinite(parsedTtsDisabledUntil) ? parsedTtsDisabledUntil : 0;
+let ttsUnavailableReason = '';
+const ttsIsAvailable = () => Boolean(genai) && Date.now() >= ttsDisabledUntil && !ttsUnavailableReason;
 const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',')
   .map((origin) => origin.trim())
@@ -56,7 +60,7 @@ const onlyString = (value, max) => typeof value === 'string' && value.trim().len
 const getText = (response) => response?.text || '';
 
 app.get('/health', (_request, response) => {
-  response.json({ ok: true, aiConfigured: Boolean(genai), textModel, ttsModel });
+  response.json({ ok: true, aiConfigured: Boolean(genai), ttsAvailable: ttsIsAvailable(), textModel, ttsModel });
 });
 
 app.post('/api/turn', async (request, response) => {
@@ -113,6 +117,7 @@ app.post('/api/speech', async (request, response) => {
   if (!onlyString(text, 700)) return response.status(400).json({ error: 'Speech text must be under 700 characters.' });
   if (!agents[speakerId]) return response.status(400).json({ error: 'Unknown speaker.' });
   if (!genai) return response.status(503).json({ error: 'Gemini voice is not configured. The browser can speak this turn.' });
+  if (!ttsIsAvailable()) return response.status(429).json({ error: 'Gemini voice is temporarily unavailable. Using your device voice instead.', code: 'tts_unavailable' });
 
   try {
     const persona = agents[speakerId];
@@ -133,8 +138,14 @@ app.post('/api/speech', async (request, response) => {
     if (!audio) throw new Error('The speech model returned no audio.');
     response.json({ mimeType: 'audio/wav', audioBase64: audio });
   } catch (error) {
-    console.error('Gemini speech request failed:', error instanceof Error ? error.message : 'unknown error');
-    response.status(502).json({ error: 'Voice generation failed. Use the browser voice instead.' });
+    const message = error instanceof Error ? error.message : 'unknown error';
+    const isRateLimited = /429|rate.?limit|quota/i.test(message);
+    ttsUnavailableReason = isRateLimited ? 'rate_limit' : 'temporary_error';
+    console.error('Gemini speech request failed:', message);
+    response.status(isRateLimited ? 429 : 502).json({
+      error: isRateLimited ? 'Gemini voice quota is unavailable. Using your device voice instead.' : 'Voice generation failed. Using your device voice instead.',
+      code: isRateLimited ? 'tts_unavailable' : 'tts_error',
+    });
   }
 });
 
