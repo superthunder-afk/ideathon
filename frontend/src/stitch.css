@@ -303,3 +303,17 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Short, restrained screen transitions around the exported Stitch screens. */
+@keyframes stitch-frame-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: page-enter 260ms ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, iframe { animation: none !important; }
+}

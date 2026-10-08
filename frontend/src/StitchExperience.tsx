@@ -3,13 +3,13 @@ import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleHelp, Headphones, Info
 import type { GDReport, PersonalityType, TranscriptEntry } from './types';
 import ExactStitchFrame from './ExactStitchFrame';
 
-type RoomLanguage = 'en' | 'en-hi' | 'hi';
+type RoomLanguage = 'en';
 type SpeechEngine = 'sarvam' | 'kokoro';
 type Agent = { id: PersonalityType; name: string; role: string; hue: string; initials: string; voice: string };
 type TopicOption = { label: string; topic: string };
 
 interface StitchExperienceProps {
-  screen: 'setup' | 'room' | 'report';
+  screen: 'home' | 'setup' | 'room' | 'report';
   topic: string;
   topics: TopicOption[];
   customTopic: string;
@@ -45,6 +45,8 @@ interface StitchExperienceProps {
   report: GDReport | null;
   reportLoading: boolean;
   onOpenRoom: (topic?: string, panelSize?: number) => void;
+  onOpenSetup: () => void;
+  onGoHome: () => void;
   onEndRoom: () => void;
   onReset: () => void;
   onStartListening: () => void;
@@ -55,14 +57,13 @@ interface StitchExperienceProps {
 
 const moderator: Agent = { id: 'moderator', name: 'Dr. Sharma', role: 'AI facilitator', hue: 'ink', initials: 'DS', voice: '' };
 const student: Agent = { id: 'quiet_thinker', name: 'You', role: 'Your seat', hue: 'ink', initials: 'Y', voice: '' };
-
 export default function StitchExperience(props: StitchExperienceProps) {
   const {
     screen, topic, topics, customTopic, setCustomTopic, setTopic, selectedTopic, panel, panelSize, setPanelSize,
     format, setFormat, language, setLanguage, roomLanguages, speechEngine, setSpeechEngine, kokoroStatus,
     ttsProvider, ttsAvailable, aiConnected, seconds, paused, setPaused, speechOn, setSpeechOn, transcript,
     interim, micState, micError, activeSpeaker, studentWords, totalWords, report, reportLoading,
-    onOpenRoom, onEndRoom, onReset, onStartListening, onStopListening, onInterruptAgents, onRespond,
+    onOpenRoom, onOpenSetup, onGoHome, onEndRoom, onReset, onStartListening, onStopListening, onInterruptAgents, onRespond,
   } = props;
   const designScreen: string = screen;
   const lastTurn = transcript[transcript.length - 1];
@@ -90,7 +91,7 @@ export default function StitchExperience(props: StitchExperienceProps) {
     input.value = '';
   };
 
-  if (screen === 'setup' || screen === 'room') {
+  if (screen === 'home' || screen === 'setup' || screen === 'room') {
     return <ExactStitchFrame
       screen={screen}
       selectedTopic={selectedTopic}
@@ -99,17 +100,20 @@ export default function StitchExperience(props: StitchExperienceProps) {
       seconds={seconds}
       micState={micState}
       onOpenRoom={onOpenRoom}
+      onOpenSetup={onOpenSetup}
+      onGoHome={onGoHome}
       onReset={onReset}
       onEndRoom={onEndRoom}
       onStartListening={onStartListening}
       onStopListening={onStopListening}
+      onRespond={onRespond}
       onSetTopic={setCustomTopic}
       onSetPanelSize={setPanelSize}
     />;
   }
 
   return (
-    <div className="editorial-app">
+    <div key={screen} className="editorial-app page-enter">
       <header className="editorial-header">
         <a className="editorial-brand" href="#" onClick={(event) => { event.preventDefault(); onReset(); }} aria-label="GD Arena home">
           <span>GD Arena</span><i>/</i><small>{designScreen === 'setup' ? 'SETUP' : designScreen === 'room' ? 'LIVE DISCOURSE' : 'SESSION BRIEF'}</small>
@@ -169,7 +173,7 @@ export default function StitchExperience(props: StitchExperienceProps) {
       {designScreen === 'room' && <main className="arena-main">
         <div className="arena-heading">
           <button className="quiet-back" onClick={onReset}><ArrowLeft size={15} /> Setup</button>
-          <div className="arena-topic"><span className="eyebrow-zen"><span /> {format.toUpperCase()} · {language === 'en-hi' ? 'HINGLISH' : language === 'hi' ? 'HINDI' : 'ENGLISH'}</span><h1>{selectedTopic}</h1><p>You and {panel.length} AI participants, with Dr. Sharma moderating.</p></div>
+          <div className="arena-topic"><span className="eyebrow-zen"><span /> {format.toUpperCase()} · ENGLISH</span><h1>{selectedTopic}</h1><p>You and {panel.length} AI participants, with Dr. Sharma moderating.</p></div>
           <button className="finish-button" onClick={onEndRoom}>End session <ArrowRight size={15} /></button>
         </div>
 

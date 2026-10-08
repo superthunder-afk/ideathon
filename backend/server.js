@@ -70,7 +70,7 @@ app.get('/health', (_request, response) => {
 });
 
 app.post('/api/turn', async (request, response) => {
-  const { topic, language = 'en-hi', format = 'Open discussion', panel = [], transcript = [] } = request.body || {};
+  const { topic, language = 'en', format = 'Open discussion', panel = [], transcript = [] } = request.body || {};
   if (!onlyString(topic, 240)) return response.status(400).json({ error: 'Add a topic under 240 characters.' });
   if (!Array.isArray(panel) || panel.length < 3 || panel.length > 5 || panel.some((id) => !agents[id] || id === 'moderator')) {
     return response.status(400).json({ error: 'Choose 3 to 5 known AI participants.' });
@@ -84,11 +84,7 @@ app.post('/api/turn', async (request, response) => {
     text: String(turn?.text || '').slice(0, 900),
     isStudent: Boolean(turn?.isStudent),
   }));
-  const languageGuidance = {
-    en: 'Speak in natural, conversational English only.',
-    'en-hi': 'Code-switch naturally between conversational English and Hindi in Devanagari script (Hinglish). Keep English words in Latin script. Follow how the student speaks; do not translate every sentence.',
-    hi: 'Speak in natural, conversational Hindi using Devanagari script.',
-  }[language] || 'Speak in natural, conversational Hinglish, following how the student speaks.';
+  const languageGuidance = 'Speak in natural, conversational English only. Use a clear, relaxed Indian English accent; avoid robotic phrasing, Hindi, and code-switching.';
   const personaCards = panel.map((id) => ({ id, name: agents[id].name, traits: agents[id].persona }));
   const prompt = [
     'You are the turn manager for GD Arena, a student group discussion simulation.',
@@ -119,12 +115,11 @@ app.post('/api/turn', async (request, response) => {
 });
 
 app.post('/api/speech', async (request, response) => {
-  const { text, speakerId = 'moderator', language = 'en-hi' } = request.body || {};
+  const { text, speakerId = 'moderator' } = request.body || {};
   if (!onlyString(text, 700)) return response.status(400).json({ error: 'Speech text must be under 700 characters.' });
   if (!agents[speakerId]) return response.status(400).json({ error: 'Unknown speaker.' });
   if (sarvamApiKey) {
     try {
-      const hasHindiScript = /[\u0900-\u097F]/u.test(text);
       const sarvamResponse = await fetch('https://api.sarvam.ai/text-to-speech', {
         method: 'POST',
         headers: { 'api-subscription-key': sarvamApiKey, 'Content-Type': 'application/json' },
@@ -132,7 +127,7 @@ app.post('/api/speech', async (request, response) => {
           text: text.trim(),
           model: sarvamTtsModel,
           speaker: agents[speakerId].sarvamVoice,
-          language_code: language === 'hi' || (language === 'en-hi' && hasHindiScript) ? 'hi-IN' : 'en-IN',
+          language_code: 'en-IN',
           speech_sample_rate: 24000,
           output_audio_codec: 'wav',
           temperature: 0.6,

@@ -33,11 +33,9 @@ const topics = [
   { label: 'Abstract', topic: 'Does silence communicate more than words?' },
 ];
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-type RoomLanguage = 'en' | 'en-hi' | 'hi';
+type RoomLanguage = 'en';
 const roomLanguages: Array<{ id: RoomLanguage; label: string; note: string }> = [
   { id: 'en', label: 'English', note: 'English discussion' },
-  { id: 'en-hi', label: 'Hinglish', note: 'English + Hindi mix' },
-  { id: 'hi', label: 'Hindi', note: 'हिंदी चर्चा' },
 ];
 type SpeechEngine = 'sarvam' | 'kokoro';
 const kokoroVoices = {
@@ -54,12 +52,12 @@ const demoReplies = [
 ];
 
 function App() {
-  const [screen, setScreen] = useState<'setup' | 'room' | 'report'>('setup');
+  const [screen, setScreen] = useState<'home' | 'setup' | 'room' | 'report'>('home');
   const [topic, setTopic] = useState(topics[0].topic);
   const [customTopic, setCustomTopic] = useState('');
   const [panelSize, setPanelSize] = useState(4);
   const [format, setFormat] = useState('Open discussion');
-  const [language, setLanguage] = useState<RoomLanguage>('en-hi');
+  const [language, setLanguage] = useState<RoomLanguage>('en');
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [micState, setMicState] = useState<'idle' | 'listening' | 'unsupported' | 'error'>('idle');
   const [micError, setMicError] = useState('');
@@ -93,6 +91,7 @@ function App() {
   const ttsAvailableRef = useRef(false);
   secondsRef.current = seconds;
   roomActiveRef.current = screen === 'room';
+
   const selectedTopic = customTopic.trim() || topic;
   const panel = agents.slice(0, panelSize);
   const studentWords = transcript.filter((line) => line.isStudent).reduce((sum, line) => sum + line.text.trim().split(/\s+/).filter(Boolean).length, 0);
@@ -315,7 +314,8 @@ function App() {
       voices = window.speechSynthesis.getVoices();
     }
     if (controller.signal.aborted || token !== discussionTokenRef.current) return false;
-    const targetPrefix = language === 'hi' ? 'hi' : 'en';
+    utterance.lang = 'en-IN';
+    const targetPrefix = 'en';
     const matchingVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith(targetPrefix));
     const voiceCandidates = (matchingVoices.length ? matchingVoices : voices.filter((voice) => voice.lang.toLowerCase().startsWith('en')))
       .sort((first, second) => Number(/natural|neural|online|enhanced/i.test(second.name)) - Number(/natural|neural|online|enhanced/i.test(first.name)));
@@ -370,14 +370,10 @@ function App() {
     const roomPanel = agents.slice(0, panelSizeOverride ?? panelSize);
     const token = interruptAgents();
     transcriptRef.current = [];
-    const openingByLanguage: Record<RoomLanguage, string> = {
-      en: `Welcome, everyone. Today we are discussing: “${roomTopic}”. Keep your points concise, listen to each other, and make space for different views. You have eight minutes. Who would like to open?`,
-      'en-hi': `Hi everyone, aaj ka topic hai: “${roomTopic}”. Keep your points short, listen to each other, and make space for different views. We have eight minutes. Who wants to start?`,
-      hi: `सभी का स्वागत है। आज हम चर्चा करेंगे: “${roomTopic}”। अपनी बात संक्षेप में रखें, एक-दूसरे को सुनें और अलग विचारों के लिए जगह दें। हमारे पास आठ मिनट हैं। कौन शुरुआत करना चाहेगा?`,
-    };
+    const openingText = `Welcome, everyone. Today we are discussing: “${roomTopic}”. Keep your points concise, listen to each other, and make space for different views. You have eight minutes. Who would like to open?`;
     const opening: TranscriptEntry = {
       id: crypto.randomUUID(), timestamp: 0, speakerId: 'moderator', speakerName: 'Dr. Sharma · Moderator',
-      text: openingByLanguage[language], isStudent: false,
+      text: openingText, isStudent: false,
     };
     transcriptRef.current = [opening];
     setTranscript(transcriptRef.current); setSeconds(8 * 60); secondsRef.current = 8 * 60; setPaused(false); setScreen('room'); roomActiveRef.current = true; setActiveSpeaker('moderator');
@@ -414,7 +410,7 @@ function App() {
       setMicError('');
       const instance = new Constructor();
       instance.continuous = false; instance.interimResults = true;
-      instance.lang = language === 'hi' ? 'hi-IN' : 'en-IN';
+      instance.lang = 'en-IN';
       instance.onresult = (event) => {
         let finalText = ''; let interimText = '';
         for (let i = event.results.length - 1; i >= 0; i -= 1) {
@@ -500,6 +496,8 @@ function App() {
       report={report}
       reportLoading={reportLoading}
       onOpenRoom={openRoom}
+      onOpenSetup={() => setScreen('setup')}
+      onGoHome={() => setScreen('home')}
       onEndRoom={endRoom}
       onReset={reset}
       onStartListening={startListening}
