@@ -93,9 +93,6 @@ function App() {
   const pendingFinalSpeechRef = useRef('');
   const userSpeechTimeoutRef = useRef<number | null>(null);
   const finalSpeechTimeoutRef = useRef<number | null>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
-  const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const micVadFrameRef = useRef<number | null>(null);
   const transcriptEnd = useRef<HTMLDivElement>(null);
   const remoteAudio = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -152,9 +149,6 @@ function App() {
 
   useEffect(() => () => {
     recognition.current?.stop();
-    if (micVadFrameRef.current !== null) window.cancelAnimationFrame(micVadFrameRef.current);
-    micSourceRef.current?.disconnect();
-    micStreamRef.current?.getTracks().forEach((track) => track.stop());
     if (userSpeechTimeoutRef.current !== null) window.clearTimeout(userSpeechTimeoutRef.current);
     if (finalSpeechTimeoutRef.current !== null) window.clearTimeout(finalSpeechTimeoutRef.current);
     window.speechSynthesis?.cancel();
@@ -434,56 +428,6 @@ function App() {
     if (finalSpeechTimeoutRef.current !== null) window.clearTimeout(finalSpeechTimeoutRef.current);
     finalSpeechTimeoutRef.current = null;
   };
-  const startMicLevelMonitor = async () => {
-    if (!navigator.mediaDevices?.getUserMedia) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: false,
-      });
-      if (!autoListenRef.current || !roomActiveRef.current) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      micStreamRef.current = stream;
-      const context = audioContextRef.current || new window.AudioContext();
-      audioContextRef.current = context;
-      if (context.state === 'suspended') await context.resume();
-      const source = context.createMediaStreamSource(stream);
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.2;
-      source.connect(analyser);
-      micSourceRef.current = source;
-      const samples = new Uint8Array(analyser.fftSize);
-      let voicedFrames = 0;
-      const monitor = () => {
-        if (!autoListenRef.current) return;
-        analyser.getByteTimeDomainData(samples);
-        let energy = 0;
-        for (const sample of samples) {
-          const amplitude = (sample - 128) / 128;
-          energy += amplitude * amplitude;
-        }
-        const level = Math.sqrt(energy / samples.length);
-        voicedFrames = level > 0.016 ? voicedFrames + 1 : 0;
-        if (voicedFrames >= 5) markStudentSpeech();
-        micVadFrameRef.current = window.requestAnimationFrame(monitor);
-      };
-      micVadFrameRef.current = window.requestAnimationFrame(monitor);
-    } catch {
-      /* The speech recognizer can still work on browsers that don't allow a parallel level monitor. */
-    }
-  };
-  const stopMicLevelMonitor = () => {
-    if (micVadFrameRef.current !== null) window.cancelAnimationFrame(micVadFrameRef.current);
-    micVadFrameRef.current = null;
-    micSourceRef.current?.disconnect();
-    micSourceRef.current = null;
-    micStreamRef.current?.getTracks().forEach((track) => track.stop());
-    micStreamRef.current = null;
-  };
-
   const openRoom = (topicOverride?: string, panelSizeOverride?: number) => {
     unlockAudio();
     sessionTopicRef.current = topicOverride?.trim() || selectedTopic;
@@ -515,7 +459,6 @@ function App() {
     try {
       autoListenRef.current = true;
       setMicError('');
-      void startMicLevelMonitor();
       const instance = new Constructor();
       instance.continuous = true; instance.interimResults = true;
       instance.lang = 'en-IN';
@@ -570,7 +513,6 @@ function App() {
         };
         if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network'].includes(event.error || '')) {
           autoListenRef.current = false;
-          stopMicLevelMonitor();
           clearStudentSpeech();
         }
         setMicError(messages[event.error || ''] || event.message || `Speech recognition failed${event.error ? ` (${event.error})` : ''}. Try Chrome or type your response.`);
@@ -594,7 +536,6 @@ function App() {
   const stopListening = (_resumeDiscussion = false) => {
     const draft = [pendingFinalSpeechRef.current.trim(), interimSpeechRef.current.trim()].filter(Boolean).join(' ');
     autoListenRef.current = false;
-    stopMicLevelMonitor();
     clearStudentSpeech();
     recognition.current?.stop(); setMicState('idle'); setMicError(''); setInterim('');
     if (draft && roomActiveRef.current) void respond(draft);
