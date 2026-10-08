@@ -154,6 +154,21 @@ app.post('/api/report', async (request, response) => {
     handlingInterruptions: 'Handling interruptions: regaining the floor calmly or yielding space appropriately.',
     endingStrongly: 'Ending strongly: summarizing the discussion or leaving a clear final contribution.',
   };
+  const fallbackFeedback = studentTurns.length === 0 ? {
+    startingDiscussion: 'No student turn was captured, so there is no opening contribution to assess.',
+    qualityOfIdeas: 'No student turn was captured, so there are no ideas to assess yet.',
+    buildingOnOthers: 'No student turn was captured, so the transcript cannot show how you build on others.',
+    listeningAndRespect: 'No student turn was captured, so listening and respectful response cannot be assessed.',
+    handlingInterruptions: 'No student turn was captured, so interruption handling cannot be assessed.',
+    endingStrongly: 'No student turn was captured, so there is no closing contribution to assess.',
+  } : {
+    startingDiscussion: 'You joined after the moderator opened the room; try opening with a clear position and one brief reason.',
+    qualityOfIdeas: 'Your point is on topic; add a concrete example or supporting reason to make it more persuasive.',
+    buildingOnOthers: 'This short session gives limited evidence of how you acknowledge and extend another participant’s point.',
+    listeningAndRespect: 'A short session gives limited evidence of listening across the discussion; make your links to others’ points explicit.',
+    handlingInterruptions: 'No clear interruption appears in this transcript, so this skill was not fully tested.',
+    endingStrongly: 'The transcript does not show a closing summary from you; finish with a concise takeaway when the discussion ends.',
+  };
   const prompt = [
     'You are an honest group-discussion coach. Assess only the student turns in the provided transcript.',
     `Topic: ${topic}`,
@@ -188,7 +203,7 @@ app.post('/api/report', async (request, response) => {
         });
       }
       const score = Number(category.scoreOutOf10);
-      const feedback = onlyString(category.feedback, 600) ? category.feedback.trim() : 'There is not enough evidence in this session to assess this point yet.';
+      const feedback = onlyString(category.feedback, 600) ? category.feedback.trim() : fallbackFeedback[key];
       return [key, { title: rubric[key].split(':')[0], scoreOutOf10: Number.isFinite(score) ? Math.max(0, Math.min(10, Math.round(score))) : 0, feedback, citations }];
     }));
     const overallScore = Math.round(categoryKeys.reduce((total, key) => total + categories[key].scoreOutOf10, 0) / categoryKeys.length);
