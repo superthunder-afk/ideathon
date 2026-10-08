@@ -1,0 +1,230 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><meta content="web_standard" name="shell-type"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&amp;family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}
+@keyframes speakingWave {
+  0%, 100% {
+    d: path("M 8 15 Q 11 13, 14 15 T 20 15");
+  }
+  50% {
+    d: path("M 8 15 Q 11 17.5, 14 13.5 T 20 16");
+  }
+}
+@keyframes pinkPulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 35px -2px rgba(244, 114, 182, 0.45), 0 0 16px rgba(244, 114, 182, 0.35), 0 0 0 1.5px rgba(244, 114, 182, 0.6);
+    border-color: rgba(244, 114, 182, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 50px 3px rgba(244, 114, 182, 0.6), 0 0 24px rgba(244, 114, 182, 0.45), 0 0 0 2px rgba(244, 114, 182, 0.85);
+    border-color: rgba(244, 114, 182, 0.95);
+  }
+}
+.animated-mouth-wave {
+  animation: speakingWave 0.7s ease-in-out infinite;
+}
+.pink-speaker-glow {
+  animation: pinkPulseGlow 2.4s ease-in-out infinite;
+}
+</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"tertiary":"#146940","error":"#ba1a1a","on-background":"#1b1b1c","surface-container-lowest":"#ffffff","surface-bright":"#fcf9f8","surface-container":"#f0eded","tertiary-container":"#348357","on-primary-fixed-variant":"#822801","surface-variant":"#e5e2e1","inverse-primary":"#ffb59c","surface-tint":"#a23e18","outline":"#8a726a","surface-container-high":"#eae7e7","tertiary-fixed":"#a4f4bf","secondary":"#6e5b4b","primary":"#9f3c16","inverse-on-surface":"#f3f0ef","surface-container-low":"#f6f3f2","surface-container-highest":"#e5e2e1","on-secondary-fixed":"#26190c","surface":"#fcfaf7","on-secondary":"#ffffff","primary-container":"#bf542c","on-error":"#ffffff","on-tertiary-fixed-variant":"#00522f","on-tertiary":"#ffffff","inverse-surface":"#303030","on-surface-variant":"#57423b","on-tertiary-fixed":"#002110","on-primary-container":"#fffbff","on-error-container":"#93000a","on-surface":"#1b1b1c","secondary-container":"#f8dec9","tertiary-fixed-dim":"#88d7a5","on-tertiary-container":"#f6fff5","on-primary-fixed":"#390c00","on-secondary-container":"#746150","surface-dim":"#dcd9d9","on-secondary-fixed-variant":"#554334","primary-fixed-dim":"#ffb59c","on-primary":"#ffffff","background":"#fcfaf7","secondary-fixed-dim":"#dbc2ae","outline-variant":"#dec0b7","error-container":"#ffdad6","primary-fixed":"#ffdbcf","secondary-fixed":"#f8dec9"},borderRadius:{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},spacing:{"margin":"2rem","gutter":"1.5rem","space-md":"1rem","space-xl":"2.5rem","margin-mobile":"1rem","gutter-mobile":"1rem","space-sm":"0.5rem","space-lg":"1.5rem","space-xs":"0.25rem"},fontFamily:{"editorial":["Newsreader","Georgia","serif"],"headline-sm":["Plus Jakarta Sans"],"display":["Plus Jakarta Sans"],"body-md":["Inter"],"headline-md":["Plus Jakarta Sans"],"headline-lg":["Plus Jakarta Sans"],"body-lg":["Inter"],"label-md":["Inter"],"display-mobile":["Plus Jakarta Sans"],"label-sm":["Inter"],"headline-lg-mobile":["Plus Jakarta Sans"],"label-lg":["Inter"],"body-sm":["Inter"]}}}};</script></head><body class="bg-[#fcfaf7] font-body-md text-on-surface min-h-screen flex flex-col justify-between selection:bg-pink-100 selection:text-pink-900">
+<!-- Minimalist Top Bar: Just 'GD Arena' and a Quiet Timer -->
+<header class="w-full pt-8 pb-4 px-8 md:px-16 flex items-center justify-between text-on-surface">
+<div class="flex items-center gap-3">
+<span class="font-headline-sm text-lg md:text-xl font-medium tracking-tight text-on-surface/90">GD Arena</span>
+<span class="text-on-surface-variant/40 font-light">/</span>
+<span class="font-label-sm text-xs tracking-wider uppercase text-on-surface-variant/60 font-medium">Live Discourse</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant/70 font-label-md text-sm tracking-widest tabular-nums font-mono" id="session-countdown-wrapper">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse"></span>
+<span id="session-countdown" class="">01:05</span>
+</div>
+</header>
+<!-- Main Stage: Mascot Cards Top, Spoken Dialogue & Context Topic directly below -->
+<main class="flex-1 w-full max-w-6xl mx-auto px-6 md:px-12 flex flex-col justify-center items-center my-auto py-6">
+<!-- 1. UPPER CENTRAL AREA: MASCOT FACES IN ROUNDED SQUARE TILES -->
+<section class="w-full flex flex-col items-center mb-10"><!-- TOP ROW: AI Council & Facilitator with Avatar 1 for Moderator and respective image sheet mascots -->
+<div class="w-full flex flex-col items-center mb-6">
+  <div class="flex items-center gap-2 mb-3">
+    <span class="font-label-sm text-[10px] tracking-widest uppercase text-on-surface-variant/50 font-medium">AI Council &amp; Facilitator</span>
+  </div>
+  <div class="flex flex-wrap items-center justify-center gap-4 md:gap-6">
+    <!-- 1. The Analyst (Avatar 2: glowing cyan bot) -->
+    <div class="flex flex-col items-center">
+      <div class="relative w-24 h-24 md:w-28 md:h-28 rounded-3xl bg-surface-container-lowest border border-outline-variant/40 p-2 shadow-sm flex flex-col items-center justify-center transition-all hover:-translate-y-0.5 hover:shadow-md">
+        <div class="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden shadow-inner bg-[#e0f2fe]">
+          <div class="w-full h-full bg-cover" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCStqJhxYQoFGieM4v9WefE0EZLkG0ngZrZzriVAqI8WCFX_VngPXoStoCNqWVKDt5HvNmFOa_skGcS18EIfDgDzA7IBNSPFqaOQU9YWeLSlncxYVRU78Dn0AdRRKZsXxd_M2GqfNAs0xMXcQdmwdphGpsQ2nTKceUKKujzOpMc5kLxTVtaJrsFVLuQShPh2OJdWpWAH1TwX7pQSgVUsRsFbIGA95hndtlb_uSB1eIyp8Bo3LZAVs0u'); background-position: 50% 5%; background-size: 320%;"></div>
+        </div>
+      </div>
+      <span class="mt-1.5 text-xs font-medium text-on-surface-variant/80">The Analyst</span>
+      <span class="text-[9px] text-on-surface-variant/50 font-label-sm">AI Council</span>
+    </div>
+
+    <!-- 2. The Diplomat (Avatar 3: green leaf orb) -->
+    <div class="flex flex-col items-center">
+      <div class="relative w-24 h-24 md:w-28 md:h-28 rounded-3xl bg-surface-container-lowest border border-outline-variant/40 p-2 shadow-sm flex flex-col items-center justify-center transition-all hover:-translate-y-0.5 hover:shadow-md">
+        <div class="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden shadow-inner bg-[#fef3c7]">
+          <div class="w-full h-full bg-cover" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDyp_yWaFLi9nQvgSKetuf-n7Z1RZGk_DdPQN9Taq9nC0NqBcWuD9aQpqLlT7vthsJdBdKhXhUpH9mCU8zha_Y0njCbKNUfEPc9RWzjeOuaY-R1kxMjFlw8c5DLUh0-kKviPt_BmpMAkdHdaxDLBsnHJ2B8hB7IB5p4O7f_4aanlGq8jamYc4YGMAvKVvzNsKxPZeQJO5AUS2ofXBzblsKUXpsIyOLNLjaD4A5tQQUf7zZUqd1SF8tt'); background-position: 98% 5%; background-size: 320%;"></div>
+        </div>
+      </div>
+      <span class="mt-1.5 text-xs font-medium text-on-surface-variant/80">The Diplomat</span>
+      <span class="text-[9px] text-on-surface-variant/50 font-label-sm">AI Council</span>
+    </div>
+
+    <!-- 3. The Strategist (Avatar 4: cosmic starry orb) -->
+    <div class="flex flex-col items-center">
+      <div class="relative w-24 h-24 md:w-28 md:h-28 rounded-3xl bg-surface-container-lowest border border-outline-variant/40 p-2 shadow-sm flex flex-col items-center justify-center transition-all hover:-translate-y-0.5 hover:shadow-md">
+        <div class="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden shadow-inner bg-[#1e1b4b]">
+          <div class="w-full h-full bg-cover" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDlLHTnpfjziYupU_U5YfxmObeT5m8G2NBTnXwPFkdeXqOY1ySKCiHbZEqT3UKqH9L4EVaR13p1Wc6san4S1pkmiBG_mddDJwpoD9oa-iJI0gnVubJqZGZrkWsupYk7vk8hpf4YCPceE6oX3L7BRwbg9QAJ6ipKzOS8_ZSE82BObagDUYobWMcYny_v8iRdbz6vZJTksJfjU2jL-lX8PGY02diSi0Srj55JjbIgS7mq4mqx2jNZWGVe'); background-position: 2% 95%; background-size: 320%;"></div>
+        </div>
+      </div>
+      <span class="mt-1.5 text-xs font-medium text-on-surface-variant/80">The Strategist</span>
+      <span class="text-[9px] text-on-surface-variant/50 font-label-sm">AI Council</span>
+    </div>
+
+    <!-- 4. The Skeptic (Avatar 6: spectacles scholar) -->
+    <div class="flex flex-col items-center">
+      <div class="relative w-24 h-24 md:w-28 md:h-28 rounded-3xl bg-surface-container-lowest border border-outline-variant/40 p-2 shadow-sm flex flex-col items-center justify-center transition-all hover:-translate-y-0.5 hover:shadow-md">
+        <div class="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden shadow-inner bg-[#f5f5f4]">
+          <div class="w-full h-full bg-cover" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAqL8hw-8iwu0IyyuSOaXd1g91WTXW3nqM1DrodgCJKihouDk287zWZS4MvktTMP3kabsh44raGMvT9swTBb8wj14AmqZj2NWLwCue65YzjhR-TOwLmtHHcxQ4RqRHTCSOI-BF0XgIbu0GsBwW_E6IV9K1V9T0fX_nvJGbhWGjXwpCvO6wqKEUtheWaIoxZQ6_cjrp_Y8k6Dfm8Vp9aWphF8KhhdAVa4okaYrypu20Bz56s3fma7UJn'); background-position: 98% 95%; background-size: 320%;"></div>
+        </div>
+      </div>
+      <span class="mt-1.5 text-xs font-medium text-on-surface-variant/80">The Skeptic</span>
+      <span class="text-[9px] text-on-surface-variant/50 font-label-sm">AI Council</span>
+    </div>
+
+    <!-- 5. Moderator Bear / Facilitator (Avatar 1: pale glowing pearl/warm orb as requested!) -->
+    <div class="flex flex-col items-center">
+      <div class="relative w-24 h-24 md:w-28 md:h-28 rounded-3xl bg-surface-container-lowest border-2 border-emerald-500/40 p-2 shadow-sm flex flex-col items-center justify-center transition-all hover:-translate-y-0.5 hover:shadow-md">
+        <div class="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden shadow-inner bg-[#fffbeb]">
+          <div class="w-full h-full bg-cover" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDX2Os3kuyfWf2eQGTLPKdV2BEEZcdvUs6-kurudSdvTpN3N3EUwfQHxLoSPL8EEvWUkjBitU73bhKy6DNHKSw0UTvC1PgVGeCIfunH6-tz4FmjAkv2XatXBmszbsUwLewWL23ZbgKbmifeMlvXm_hPTnzgfWW3DdUoqxiG40uKL7sXaNLpISd-IDgXqaeK4a09X0X9VRXn2KPW6s0yCyrHQGneoRjZ4sHZiEIWfufMpDYlqMAfe6pN'); background-position: 2% 5%; background-size: 320%;"></div>
+        </div>
+      </div>
+      <span class="mt-1.5 text-xs font-medium text-on-surface-variant/80">Moderator</span>
+      <span class="text-[9px] text-tertiary font-label-sm font-semibold">Facilitator</span>
+    </div>
+  </div>
+</div>
+
+<!-- SEPARATION CONNECTOR -->
+<div class="flex items-center justify-center gap-3 w-full max-w-xs my-1">
+  <div class="h-px flex-1 bg-outline-variant/30"></div>
+  <span class="text-[9px] uppercase tracking-widest text-on-surface-variant/50 font-mono font-medium">Challenger Stage</span>
+  <div class="h-px flex-1 bg-outline-variant/30"></div>
+</div>
+
+<!-- LOWER DEDICATED STAGE: THE CHALLENGER (Avatar 5: adorable purple cat with multidirectional ambient pink gradient glow & cute wave visualiser) -->
+<div class="relative flex flex-col items-center mt-3">
+  <!-- Pink ambient glow light radiating in all directions smoothly behind the avatar -->
+  <div class="ambient-pink-diffuse"></div>
+
+  <!-- Speaking Avatar Tile -->
+  <div class="relative z-10 w-32 h-32 md:w-36 md:h-36 rounded-3xl bg-surface-container-lowest/90 backdrop-blur-sm border-2 border-pink-400 p-2.5 shadow-xl pink-speaker-glow flex flex-col items-center justify-center transition-all scale-[1.04]">
+    <!-- Speaking Live Badge -->
+    <span class="absolute top-2.5 right-2.5 flex items-center gap-1 px-2 py-0.5 bg-pink-100 text-pink-700 text-[9px] font-label-sm font-semibold tracking-wider uppercase rounded-full shadow-xs">
+      <span class="w-1.5 h-1.5 rounded-full bg-pink-500 animate-ping"></span>
+      LIVE
+    </span>
+
+    <!-- Avatar 5 Mascot: Smiling Purple/Black Cat with Glowing Ears & Eyes -->
+    <div class="w-22 h-22 md:w-26 md:h-26 rounded-full overflow-hidden shadow-md bg-[#faf5ff] ring-2 ring-pink-300/60 p-0.5">
+      <div class="w-full h-full rounded-full bg-cover" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAgEOUMNjTrbHSpTdU-LOYEi7JXFzqCYpFtMEOpTHjFNCsQiMJn9TinRzuGKFR86jG2epQFXB1PskNNCUXXT43_4IIyYs2LDWLb9YXFxFj2N71AKEubpNX4J9HxSNTirTUm6lhITG50mffdGW5BG9_j9U6ksgzMB_jFFxzUA9AGzgMYwPTS1mdW-DKaZrLmNF-zjU5ScWiEabgp54H7x2G9ZGNoZNNrMC_QjrewDsuGgO5JTIK1Xe29'); background-position: 50% 95%; background-size: 320%;"></div>
+    </div>
+  </div>
+
+  <!-- Cute Wave-like Sound Visualiser Directly Under The Mascot Tile -->
+  <div class="relative z-10 flex items-center justify-center gap-1.5 mt-3.5 px-4 py-1.5 rounded-full bg-pink-50/80 backdrop-blur-xs border border-pink-200/60 shadow-xs">
+    <span class="wave-bar w-1 bg-pink-400" style="animation-delay: 0.1s;"></span>
+    <span class="wave-bar w-1 bg-pink-500" style="animation-delay: 0.35s;"></span>
+    <span class="wave-bar w-1 bg-pink-600" style="animation-delay: 0.2s;"></span>
+    <span class="wave-bar w-1.5 bg-pink-600" style="animation-delay: 0s;"></span>
+    <span class="wave-bar w-1 bg-pink-600" style="animation-delay: 0.4s;"></span>
+    <span class="wave-bar w-1 bg-pink-500" style="animation-delay: 0.25s;"></span>
+    <span class="wave-bar w-1 bg-pink-400" style="animation-delay: 0.5s;"></span>
+  </div>
+
+  <span class="relative z-10 mt-2 text-sm font-semibold text-pink-900 flex items-center gap-1.5">
+    The Challenger
+  </span>
+  <span class="relative z-10 text-[10px] text-pink-600 font-label-sm font-medium tracking-wide">Speaking now</span>
+</div></section>
+<!-- 2. SPOKEN WORDS & TOPIC PLACEMENT: TASTEFUL, REFINED SCALE DIRECTLY UNDER MASCOTS -->
+<section class="max-w-2xl mx-auto flex flex-col items-center text-center">
+<!-- Active Speaker Label Badge -->
+<div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-pink-50 border border-pink-200/60 mb-4">
+<span class="w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
+<span class="font-label-sm text-xs font-semibold tracking-wider uppercase text-pink-900">The Challenger · Speaking</span>
+</div>
+<!-- Tasteful Refined Spoken Dialogue Quote -->
+<blockquote class="font-editorial text-xl sm:text-2xl md:text-[1.65rem] font-light leading-snug md:leading-relaxed text-on-surface tracking-tight max-w-2xl mx-auto selection:bg-pink-100">
+    “If foundational cognitive skills aren’t nurtured early, outsourcing synthesis to LLMs risks rapid intellectual atrophy.”
+  </blockquote>
+<!-- Closely Paired Discussion Topic Context -->
+<div class="mt-6 pt-5 border-t border-outline-variant/30 text-on-surface-variant/70 font-body-sm text-xs md:text-sm tracking-normal">
+    Discussion topic: <span class="font-medium text-on-surface/90">Should artificial intelligence replace traditional university education?</span>
+</div>
+</section>
+</main>
+<!-- Floating Minimal Call Controls at Bottom: Just Clean Mute & Leave Buttons -->
+<footer class="w-full pb-10 pt-4 px-6 flex justify-center items-center">
+<div class="flex items-center gap-3 bg-surface-container-lowest/80 backdrop-blur-md px-4 py-2.5 rounded-full border border-surface-variant/40 shadow-[0_4px_24px_rgba(0,0,0,0.04)]">
+<!-- Mute Button -->
+<button class="flex items-center gap-2 px-5 py-2 rounded-full font-label-md text-xs md:text-sm font-medium text-on-surface hover:bg-surface-container-high transition-all active:scale-95" id="mic-toggle-btn">
+<span class="material-symbols-outlined text-[18px]" id="mic-icon">mic</span>
+<span id="mic-label" class="">Mute Mic</span>
+</button>
+<div class="h-4 w-px bg-surface-variant"></div>
+<!-- Leave Button -->
+<button class="flex items-center gap-2 px-5 py-2 rounded-full font-label-md text-xs md:text-sm font-medium text-error hover:bg-error-container/40 transition-all active:scale-95" id="btn-leave-arena">
+<span class="material-symbols-outlined text-[18px]">logout</span>
+<span class="">Leave</span>
+</button>
+</div>
+</footer>
+<!-- Interactive Scripts -->
+<script>
+  (function initZenArena() {
+    // Quiet countdown timer
+    let totalSeconds = 8 * 60 + 36;
+    const countdownEl = document.getElementById('session-countdown');
+    if (countdownEl) {
+      setInterval(() => {
+        if (totalSeconds > 0) {
+          totalSeconds--;
+          const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+          const secs = (totalSeconds % 60).toString().padStart(2, '0');
+          countdownEl.textContent = `${mins}:${secs}`;
+        }
+      }, 1000);
+    }
+
+    // Minimal Mic Toggle
+    const micBtn = document.getElementById('mic-toggle-btn');
+    const micIcon = document.getElementById('mic-icon');
+    const micLabel = document.getElementById('mic-label');
+    let isMuted = false;
+
+    function toggleMic() {
+      isMuted = !isMuted;
+      if (isMuted) {
+        micIcon.textContent = 'mic_off';
+        micLabel.textContent = 'Unmute Mic';
+        micBtn.classList.add('text-on-surface-variant', 'opacity-70');
+      } else {
+        micIcon.textContent = 'mic';
+        micLabel.textContent = 'Mute Mic';
+        micBtn.classList.remove('text-on-surface-variant', 'opacity-70');
+      }
+    }
+
+    if (micBtn) {
+      micBtn.addEventListener('click', toggleMic);
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && e.target === document.body) {
+        e.preventDefault();
+        toggleMic();
+      }
+    });
+  })();
+</script>
+
+
+</body></html>

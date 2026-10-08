@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction, FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleHelp, Headphones, Info, Mic, MicOff, Pause, Play, RotateCcw, Send, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import type { GDReport, PersonalityType, TranscriptEntry } from './types';
+import ExactStitchFrame from './ExactStitchFrame';
 
 type RoomLanguage = 'en' | 'en-hi' | 'hi';
 type SpeechEngine = 'sarvam' | 'kokoro';
@@ -43,7 +44,7 @@ interface StitchExperienceProps {
   totalWords: number;
   report: GDReport | null;
   reportLoading: boolean;
-  onOpenRoom: () => void;
+  onOpenRoom: (topic?: string, panelSize?: number) => void;
   onEndRoom: () => void;
   onReset: () => void;
   onStartListening: () => void;
@@ -63,6 +64,7 @@ export default function StitchExperience(props: StitchExperienceProps) {
     interim, micState, micError, activeSpeaker, studentWords, totalWords, report, reportLoading,
     onOpenRoom, onEndRoom, onReset, onStartListening, onStopListening, onInterruptAgents, onRespond,
   } = props;
+  const designScreen: string = screen;
   const lastTurn = transcript[transcript.length - 1];
   const turnAgent = lastTurn?.speakerId === 'moderator' ? moderator : lastTurn?.isStudent ? student : panel.find((agent) => agent.id === lastTurn?.speakerId);
   const activeName = micState === 'listening' || activeSpeaker === 'student'
@@ -88,25 +90,43 @@ export default function StitchExperience(props: StitchExperienceProps) {
     input.value = '';
   };
 
+  if (screen === 'setup' || screen === 'room') {
+    return <ExactStitchFrame
+      screen={screen}
+      selectedTopic={selectedTopic}
+      panelSize={panelSize}
+      transcript={transcript}
+      seconds={seconds}
+      micState={micState}
+      onOpenRoom={onOpenRoom}
+      onReset={onReset}
+      onEndRoom={onEndRoom}
+      onStartListening={onStartListening}
+      onStopListening={onStopListening}
+      onSetTopic={setCustomTopic}
+      onSetPanelSize={setPanelSize}
+    />;
+  }
+
   return (
     <div className="editorial-app">
       <header className="editorial-header">
         <a className="editorial-brand" href="#" onClick={(event) => { event.preventDefault(); onReset(); }} aria-label="GD Arena home">
-          <span>GD Arena</span><i>/</i><small>{screen === 'setup' ? 'SETUP' : screen === 'room' ? 'LIVE DISCOURSE' : 'SESSION BRIEF'}</small>
+          <span>GD Arena</span><i>/</i><small>{designScreen === 'setup' ? 'SETUP' : designScreen === 'room' ? 'LIVE DISCOURSE' : 'SESSION BRIEF'}</small>
         </a>
         <nav className="editorial-steps" aria-label="Practice steps">
-          <span className={screen === 'setup' ? 'current' : 'complete'}>{screen === 'setup' ? '01' : <Check size={13} />} Setup</span>
+          <span className={designScreen === 'setup' ? 'current' : 'complete'}>{designScreen === 'setup' ? '01' : <Check size={13} />} Setup</span>
           <i />
-          <span className={screen === 'room' ? 'current' : screen === 'report' ? 'complete' : ''}>{screen === 'report' ? <Check size={13} /> : '02'} Arena</span>
+          <span className={designScreen === 'room' ? 'current' : designScreen === 'report' ? 'complete' : ''}>{designScreen === 'report' ? <Check size={13} /> : '02'} Arena</span>
           <i />
-          <span className={screen === 'report' ? 'current' : ''}>03 Brief</span>
+          <span className={designScreen === 'report' ? 'current' : ''}>03 Brief</span>
         </nav>
         <div className="header-status">
-          {screen === 'room' ? <><span className={`status-dot ${seconds < 60 ? 'urgent' : ''}`} /><span className="header-timer">{timer}</span><button className="timer-control" onClick={() => setPaused((value) => !value)} aria-label={paused ? 'Resume timer' : 'Pause timer'}>{paused ? <Play size={14} /> : <Pause size={14} />}</button></> : <><span className="status-dot" /><span>{screen === 'report' ? 'COMPLETE' : 'READY'}</span></>}
+          {designScreen === 'room' ? <><span className={`status-dot ${seconds < 60 ? 'urgent' : ''}`} /><span className="header-timer">{timer}</span><button className="timer-control" onClick={() => setPaused((value) => !value)} aria-label={paused ? 'Resume timer' : 'Pause timer'}>{paused ? <Play size={14} /> : <Pause size={14} />}</button></> : <><span className="status-dot" /><span>{designScreen === 'report' ? 'COMPLETE' : 'READY'}</span></>}
         </div>
       </header>
 
-      {screen === 'setup' && <main className="setup-zen">
+      {designScreen === 'setup' && <main className="setup-zen">
         <section className="setup-intro-zen">
           <p className="eyebrow-zen"><span /> EIGHT MINUTES · ONE BETTER FIRST IMPRESSION</p>
           <h1>What do you want<br className="desktop-break" /> to discuss<span>?</span></h1>
@@ -140,13 +160,13 @@ export default function StitchExperience(props: StitchExperienceProps) {
             <div className="avatar-preview" aria-label={`${panel.length} AI participants and one moderator`}>
               {panel.map((agent) => <Face key={agent.id} agent={agent} small />)}<Face agent={moderator} small />
             </div>
-            <button type="button" className="begin-button" onClick={onOpenRoom}>Begin deliberation <ArrowRight size={17} /></button>
+            <button type="button" className="begin-button" onClick={() => onOpenRoom()}>Begin deliberation <ArrowRight size={17} /></button>
           </div>
           <p className="setup-disclosure"><Info size={13} /> Your panel consists of AI participants. Transcripts are used to generate feedback. {speechEngine === 'kokoro' && language === 'en' ? 'Kokoro voice is generated on this device.' : providerLabel + ' is selected.'}</p>
         </section>
       </main>}
 
-      {screen === 'room' && <main className="arena-main">
+      {designScreen === 'room' && <main className="arena-main">
         <div className="arena-heading">
           <button className="quiet-back" onClick={onReset}><ArrowLeft size={15} /> Setup</button>
           <div className="arena-topic"><span className="eyebrow-zen"><span /> {format.toUpperCase()} · {language === 'en-hi' ? 'HINGLISH' : language === 'hi' ? 'HINDI' : 'ENGLISH'}</span><h1>{selectedTopic}</h1><p>You and {panel.length} AI participants, with Dr. Sharma moderating.</p></div>
@@ -199,7 +219,7 @@ export default function StitchExperience(props: StitchExperienceProps) {
         </div>
       </main>}
 
-      {screen === 'report' && <main className="brief-main">
+      {designScreen === 'report' && <main className="brief-main">
         <div className="brief-heading"><button className="quiet-back" onClick={onReset}><ArrowLeft size={15} /> New practice</button><span className="eyebrow-zen"><span /> SESSION COMPLETE</span></div>
         <section className="brief-title"><span className="brief-mark"><Sparkles size={20} /></span><h1>A clearer picture<br />of how you showed up.</h1><p>Specific moments from your discussion, so your next one feels more natural.</p></section>
         <div className="brief-summary">

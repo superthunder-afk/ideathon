@@ -336,7 +336,7 @@ function App() {
     return token === discussionTokenRef.current;
   };
 
-  const runDiscussion = async (token: number) => {
+  const runDiscussion = async (token: number, topicOverride = selectedTopic, panelOverride = panel) => {
     if (!aiConnected || !API_BASE_URL) return;
     while (token === discussionTokenRef.current && roomActiveRef.current && secondsRef.current > 0) {
       const controller = new AbortController();
@@ -345,7 +345,7 @@ function App() {
       try {
         const response = await fetch(`${API_BASE_URL}/api/turn`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-          body: JSON.stringify({ topic: selectedTopic, language, panel: panel.map((agent) => agent.id), transcript: transcriptRef.current }),
+          body: JSON.stringify({ topic: topicOverride, language, panel: panelOverride.map((agent) => agent.id), transcript: transcriptRef.current }),
         });
         if (!response.ok) throw new Error('AI turn unavailable');
         const reply = await response.json();
@@ -364,14 +364,16 @@ function App() {
     }
   };
 
-  const openRoom = () => {
+  const openRoom = (topicOverride?: string, panelSizeOverride?: number) => {
     unlockAudio();
+    const roomTopic = topicOverride?.trim() || selectedTopic;
+    const roomPanel = agents.slice(0, panelSizeOverride ?? panelSize);
     const token = interruptAgents();
     transcriptRef.current = [];
     const openingByLanguage: Record<RoomLanguage, string> = {
-      en: `Welcome, everyone. Today we are discussing: “${selectedTopic}”. Keep your points concise, listen to each other, and make space for different views. You have eight minutes. Who would like to open?`,
-      'en-hi': `Hi everyone, aaj ka topic hai: “${selectedTopic}”. Keep your points short, listen to each other, and make space for different views. We have eight minutes. Who wants to start?`,
-      hi: `सभी का स्वागत है। आज हम चर्चा करेंगे: “${selectedTopic}”। अपनी बात संक्षेप में रखें, एक-दूसरे को सुनें और अलग विचारों के लिए जगह दें। हमारे पास आठ मिनट हैं। कौन शुरुआत करना चाहेगा?`,
+      en: `Welcome, everyone. Today we are discussing: “${roomTopic}”. Keep your points concise, listen to each other, and make space for different views. You have eight minutes. Who would like to open?`,
+      'en-hi': `Hi everyone, aaj ka topic hai: “${roomTopic}”. Keep your points short, listen to each other, and make space for different views. We have eight minutes. Who wants to start?`,
+      hi: `सभी का स्वागत है। आज हम चर्चा करेंगे: “${roomTopic}”। अपनी बात संक्षेप में रखें, एक-दूसरे को सुनें और अलग विचारों के लिए जगह दें। हमारे पास आठ मिनट हैं। कौन शुरुआत करना चाहेगा?`,
     };
     const opening: TranscriptEntry = {
       id: crypto.randomUUID(), timestamp: 0, speakerId: 'moderator', speakerName: 'Dr. Sharma · Moderator',
@@ -380,7 +382,7 @@ function App() {
     transcriptRef.current = [opening];
     setTranscript(transcriptRef.current); setSeconds(8 * 60); secondsRef.current = 8 * 60; setPaused(false); setScreen('room'); roomActiveRef.current = true; setActiveSpeaker('moderator');
     void speak(opening.text, 'moderator', token).then((completed) => {
-      if (completed && token === discussionTokenRef.current) void runDiscussion(token);
+      if (completed && token === discussionTokenRef.current) void runDiscussion(token, roomTopic, roomPanel);
     });
   };
 
