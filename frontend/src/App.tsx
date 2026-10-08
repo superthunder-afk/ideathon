@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Clock3, Command, Headphones, Info, Mic, MicOff, MoreHorizontal, Pause, Play, RotateCcw, Sparkles, Volume2 } from 'lucide-react';
+import type { KokoroTTS } from 'kokoro-js';
 import type { GDReport, PersonalityType, TranscriptEntry } from './types';
 
 type Agent = { id: PersonalityType; name: string; role: string; hue: string; initials: string; voice: string };
@@ -38,6 +39,11 @@ const roomLanguages: Array<{ id: RoomLanguage; label: string; note: string }> = 
   { id: 'en-hi', label: 'Hinglish', note: 'English + Hindi mix' },
   { id: 'hi', label: 'Hindi', note: 'हिंदी चर्चा' },
 ];
+type SpeechEngine = 'fish' | 'kokoro';
+const kokoroVoices = {
+  dominator: 'am_fenrir', data_driven: 'af_kore', quiet_thinker: 'am_michael',
+  wanderer: 'af_bella', connector: 'af_sarah', moderator: 'bm_george',
+} as const;
 
 const demoReplies = [
   { agent: 'data_driven' as PersonalityType, text: 'I agree that convenience matters, but we should separate short-term efficiency from long-term impact. What kind of work are we talking about, and who benefits from the change?' },
@@ -63,6 +69,8 @@ function App() {
   const [paused, setPaused] = useState(false);
   const [currentAgent, setCurrentAgent] = useState(0);
   const [speechOn, setSpeechOn] = useState(true);
+  const [speechEngine, setSpeechEngine] = useState<SpeechEngine>('fish');
+  const [kokoroStatus, setKokoroStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [aiConnected, setAiConnected] = useState(false);
   const [ttsAvailable, setTtsAvailable] = useState(false);
   const [ttsProvider, setTtsProvider] = useState<'openrouter' | 'gemini' | 'device'>('device');
@@ -73,6 +81,8 @@ function App() {
   const remoteAudio = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const kokoroRef = useRef<KokoroTTS | null>(null);
+  const kokoroPromiseRef = useRef<Promise<KokoroTTS> | null>(null);
   const transcriptRef = useRef<TranscriptEntry[]>([]);
   const discussionTokenRef = useRef(0);
   const turnAbortRef = useRef<AbortController | null>(null);
@@ -168,68 +178,113 @@ function App() {
     });
     window.speechSynthesis?.cancel();
     remoteAudio.current?.pause();
-    if (speechOn && ttsAvailableRef.current && API_BASE_URL) {
-      try {
-        const requestController = new AbortController();
-        const cancelRequest = () => requestController.abort();
-        controller.signal.addEventListener('abort', cancelRequest, { once: true });
-        const timeout = window.setTimeout(() => requestController.abort(), 15000);
-        let response: Response;
+    if (speechOn && ((speechEngine === 'kokoro' && language === 'en') || (ttsAvailableRef.current && API_BASE_URL))) {
+      if (speechEngine === 'kokoro' && language === 'en') {
         try {
-          response = await fetch(`${API_BASE_URL}/api/speech`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, speakerId, language }),
-            signal: requestController.signal,
-          });
-        } finally {
-          window.clearTimeout(timeout);
-          controller.signal.removeEventListener('abort', cancelRequest);
-        }
-        if (response.ok) {
-          const result = await response.json();
-          const context = audioContextRef.current;
-          if (context) {
-            if (context.state === 'suspended') await context.resume();
-            const bytes = Uint8Array.from(atob(result.audioBase64), (character) => character.charCodeAt(0));
-            const buffer = await context.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-            if (controller.signal.aborted || token !== discussionTokenRef.current) return false;
-            const source = context.createBufferSource();
-            source.buffer = buffer;
-            source.connect(context.destination);
-            audioSourceRef.current = source;
-            setActiveSpeaker(speakerId);
-            const playback = waitForPlayback();
-            const finishPlayback = playbackDoneRef.current;
-            source.onended = () => {
-              if (audioSourceRef.current === source) audioSourceRef.current = null;
-              if (token === discussionTokenRef.current) setActiveSpeaker('');
-              finishPlayback?.();
-            };
-            source.start();
-            await playback;
-          } else {
-            const audio = new Audio(`data:${result.mimeType};base64,${result.audioBase64}`);
-            remoteAudio.current = audio;
-            setActiveSpeaker(speakerId);
-            const playback = waitForPlayback();
-            const finishPlayback = playbackDoneRef.current;
-            audio.onended = () => {
-              if (token === discussionTokenRef.current) setActiveSpeaker('');
-              finishPlayback?.();
-            };
-            audio.onerror = () => finishPlayback?.();
-            await audio.play();
-            await playback;
+          let kokoro = kokoroRef.current;
+          if (!kokoro) {
+            setKokoroStatus('loading');
+            if (!kokoroPromiseRef.current) {
+              kokoroPromiseRef.current = import('kokoro-js').then(({ KokoroTTS: Kokoro }) => Kokoro.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', { dtype: 'q8', device: 'wasm' }));
+            }
+            kokoro = await kokoroPromiseRef.current;
+            kokoroRef.current = kokoro;
+            setKokoroStatus('ready');
           }
+          const generated = await kokoro.generate(text, { voice: kokoroVoices[speakerId as keyof typeof kokoroVoices] || 'af_heart' });
+          if (controller.signal.aborted || token !== discussionTokenRef.current) return false;
+          const context = audioContextRef.current || new window.AudioContext();
+          audioContextRef.current = context;
+          if (context.state === 'suspended') await context.resume();
+          const buffer = await context.decodeAudioData(await generated.toBlob().arrayBuffer());
+          if (controller.signal.aborted || token !== discussionTokenRef.current) return false;
+          const source = context.createBufferSource();
+          source.buffer = buffer;
+          source.connect(context.destination);
+          audioSourceRef.current = source;
+          setActiveSpeaker(speakerId);
+          const playback = waitForPlayback();
+          const finishPlayback = playbackDoneRef.current;
+          source.onended = () => {
+            if (audioSourceRef.current === source) audioSourceRef.current = null;
+            if (token === discussionTokenRef.current) setActiveSpeaker('');
+            finishPlayback?.();
+          };
+          source.start();
+          await playback;
           return token === discussionTokenRef.current;
+        } catch {
+          if (controller.signal.aborted) return false;
+          kokoroPromiseRef.current = null;
+          kokoroRef.current = null;
+          setKokoroStatus('error');
+          setSpeechEngine('fish');
+          /* Keep the room moving if this browser cannot load or run Kokoro. */
         }
-        ttsAvailableRef.current = false;
-        setTtsAvailable(false);
-      } catch {
-        if (controller.signal.aborted) return false;
-        ttsAvailableRef.current = false;
-        setTtsAvailable(false);
-        /* Fall back to the browser voice if the speech API is unavailable. */
+      }
+      if (ttsAvailableRef.current && API_BASE_URL) {
+        try {
+          const requestController = new AbortController();
+          const cancelRequest = () => requestController.abort();
+          controller.signal.addEventListener('abort', cancelRequest, { once: true });
+          const timeout = window.setTimeout(() => requestController.abort(), 15000);
+          let response: Response;
+          try {
+            response = await fetch(`${API_BASE_URL}/api/speech`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text, speakerId, language }),
+              signal: requestController.signal,
+            });
+          } finally {
+            window.clearTimeout(timeout);
+            controller.signal.removeEventListener('abort', cancelRequest);
+          }
+          if (response.ok) {
+            const result = await response.json();
+            const context = audioContextRef.current;
+            if (context) {
+              if (context.state === 'suspended') await context.resume();
+              const bytes = Uint8Array.from(atob(result.audioBase64), (character) => character.charCodeAt(0));
+              const buffer = await context.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+              if (controller.signal.aborted || token !== discussionTokenRef.current) return false;
+              const source = context.createBufferSource();
+              source.buffer = buffer;
+              source.connect(context.destination);
+              audioSourceRef.current = source;
+              setActiveSpeaker(speakerId);
+              const playback = waitForPlayback();
+              const finishPlayback = playbackDoneRef.current;
+              source.onended = () => {
+                if (audioSourceRef.current === source) audioSourceRef.current = null;
+                if (token === discussionTokenRef.current) setActiveSpeaker('');
+                finishPlayback?.();
+              };
+              source.start();
+              await playback;
+            } else {
+              const audio = new Audio(`data:${result.mimeType};base64,${result.audioBase64}`);
+              remoteAudio.current = audio;
+              setActiveSpeaker(speakerId);
+              const playback = waitForPlayback();
+              const finishPlayback = playbackDoneRef.current;
+              audio.onended = () => {
+                if (token === discussionTokenRef.current) setActiveSpeaker('');
+                finishPlayback?.();
+              };
+              audio.onerror = () => finishPlayback?.();
+              await audio.play();
+              await playback;
+            }
+            return token === discussionTokenRef.current;
+          }
+          ttsAvailableRef.current = false;
+          setTtsAvailable(false);
+        } catch {
+          if (controller.signal.aborted) return false;
+          ttsAvailableRef.current = false;
+          setTtsAvailable(false);
+          /* Fall back to the browser voice if the speech API is unavailable. */
+        }
       }
     }
     if (controller.signal.aborted || token !== discussionTokenRef.current) return false;
@@ -432,10 +487,12 @@ function App() {
           <div className="setup-divider compact" />
           <div className="field-row"><div><div className="field-label">ROOM LANGUAGE</div><p className="field-note">AI replies and speech recognition use this choice.</p></div><label className="select-wrap"><select value={language} onChange={(event) => setLanguage(event.target.value as RoomLanguage)} aria-label="Room language">{roomLanguages.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select><ChevronDown size={15} /></label></div>
           <div className="setup-divider compact" />
+          <div className="field-row"><div><div className="field-label">VOICE ENGINE</div><p className="field-note">{speechEngine === 'kokoro' ? (language === 'en' ? 'Kokoro runs on this device; first use downloads about 90 MB.' : 'Kokoro test is English-only; this language will use Fish Audio.') : 'Choose the voice you want for the AI panel.'}</p></div><label className="select-wrap"><select value={speechEngine} onChange={(event) => setSpeechEngine(event.target.value as SpeechEngine)} aria-label="AI voice engine"><option value="fish">Fish Audio</option><option value="kokoro">Try Kokoro · this device</option></select><ChevronDown size={15} /></label></div>
+          <div className="setup-divider compact" />
           <div className="field-row panel-row"><div><div className="field-label">AI PANEL SIZE</div><p className="field-note">Choose who joins the room.</p></div><div className="stepper"><button onClick={() => setPanelSize((size) => Math.max(3, size - 1))} disabled={panelSize <= 3} aria-label="Remove AI participant">−</button><strong>{panelSize}</strong><span>agents</span><button onClick={() => setPanelSize((size) => Math.min(5, size + 1))} disabled={panelSize >= 5} aria-label="Add AI participant">+</button></div></div>
           <div className="agent-strip">{panel.map((agent) => <Avatar key={agent.id} agent={agent} />)}<span className="mod-badge">+ MOD</span></div>
           <button className="start-button" onClick={openRoom}><span>Enter the practice room</span><ArrowRight size={18} /></button>
-          <p className="disclosure"><Info size={13} /> AI participants are AI. Your transcript is processed by Gemini; spoken AI replies are sent to {ttsProvider === 'openrouter' ? 'Fish Audio via OpenRouter' : ttsProvider === 'gemini' ? 'Google Gemini' : 'your device voice'} for speech. Avoid sharing sensitive personal details.</p>
+          <p className="disclosure"><Info size={13} /> AI participants are AI. Your transcript is processed by Gemini. {speechEngine === 'kokoro' ? 'English Kokoro voice is generated on your device after a one-time model download; Hinglish/Hindi uses Fish Audio.' : `Spoken AI replies use ${ttsProvider === 'openrouter' ? 'Fish Audio via OpenRouter' : ttsProvider === 'gemini' ? 'Google Gemini' : 'your device voice'}.`} Avoid sharing sensitive personal details.</p>
         </section>
       </section>}
 
@@ -448,7 +505,7 @@ function App() {
             <div className={`participant-card moderator-card ${activeSpeaker === 'moderator' ? 'speaking' : ''}`}><div className="moderator-avatar">DS</div><div className="participant-info"><strong>Dr. Sharma</strong><span>AI moderator</span></div><span className="presence" /></div>
           </div><div className="room-note"><span className="note-icon"><Headphones size={15} /></span><p>The AI keeps the discussion moving. Tap the mic to take the floor; it pauses their voices right away.</p></div><div className="speech-toggle"><span><Volume2 size={15} /> Spoken replies</span><button className={`toggle ${speechOn ? 'on' : ''}`} onClick={() => setSpeechOn((value) => !value)} aria-label="Toggle spoken replies"><i /></button></div></aside>
 
-          <section className="discussion-panel"><div className="discussion-toolbar"><div><span className="live-dot" /> <strong>LIVE DISCUSSION</strong><span className="toolbar-sep">·</span><span>{transcript.filter((line) => line.isStudent).length} of your turns</span></div><span className="demo-chip">{ttsAvailable ? (ttsProvider === 'openrouter' ? 'FISH AUDIO VOICE' : 'GEMINI VOICE') : aiConnected ? 'DEVICE VOICE' : 'DEMO RESPONSES'}</span></div><div className="transcript" aria-live="polite">{transcript.map((line) => { const agent = agents.find((item) => item.id === line.speakerId); return <article key={line.id} className={`transcript-message ${line.isStudent ? 'student-message' : ''}`}><div className="message-avatar">{agent ? <Avatar agent={agent} small /> : <div className="moderator-avatar tiny">DS</div>}</div><div className="message-body"><div className="message-meta"><strong>{line.speakerName}</strong>{line.speakerId === 'moderator' && <span className="role-pill">MODERATOR</span>}<time>{formatTime(line.timestamp)}</time></div><p>{line.text}</p></div></article>; })}{interim && <div className="interim-caption"><Mic size={14} /> {interim}<span>Listening…</span></div>}{activeSpeaker === 'thinking' && <div className="thinking"><span /><span /><span /> Someone is gathering their thoughts</div>}<div ref={transcriptEnd} /></div><div className="talk-bar">{micState === 'unsupported' && <p className="mic-notice">Live browser speech recognition is unavailable here. Try the latest Chrome or Brave, or use the text box for now.</p>}{micState === 'error' && <p className="mic-notice error">{micError || 'Speech recognition failed. Try Chrome or type your response.'}</p>}{micError && micState === 'idle' && <p className="mic-notice error">{micError}</p>}<div className="input-row"><button className={`mic-button ${micState === 'listening' ? 'recording' : ''}`} onClick={micState === 'listening' ? () => stopListening(true) : startListening} aria-label={micState === 'listening' ? 'Stop microphone' : 'Take the floor with microphone'}>{micState === 'listening' ? <MicOff size={18} /> : <Mic size={18} />}</button><input id="typed-turn" placeholder={micState === 'listening' ? 'Listening — speak your point…' : 'Or type a point to join the discussion…'} onFocus={interruptAgents} onKeyDown={(event) => { if (event.key === 'Enter') { const input = event.currentTarget; void respond(input.value); input.value = ''; } }} /><button className="send-button" aria-label="Send message" onClick={() => { const input = document.getElementById('typed-turn') as HTMLInputElement; if (input.value.trim()) { void respond(input.value); input.value = ''; } }}><ArrowRight size={18} /></button></div><div className="input-hint"><span><span className="shortcut">MIC</span> Tap to take the floor <i>·</i> or type your response</span><button onClick={endRoom}>End session <ArrowRight size={13} /></button></div></div></section>
+          <section className="discussion-panel"><div className="discussion-toolbar"><div><span className="live-dot" /> <strong>LIVE DISCUSSION</strong><span className="toolbar-sep">·</span><span>{transcript.filter((line) => line.isStudent).length} of your turns</span></div><span className="demo-chip">{speechEngine === 'kokoro' && language === 'en' ? kokoroStatus === 'loading' ? 'KOKORO · LOADING MODEL' : kokoroStatus === 'error' ? 'FISH AUDIO · FALLBACK' : 'KOKORO · ON DEVICE' : ttsAvailable ? (ttsProvider === 'openrouter' ? 'FISH AUDIO VOICE' : ttsProvider === 'gemini' ? 'GEMINI VOICE' : 'DEVICE VOICE') : aiConnected ? 'DEVICE VOICE' : 'DEMO RESPONSES'}</span></div><div className="transcript" aria-live="polite">{transcript.map((line) => { const agent = agents.find((item) => item.id === line.speakerId); return <article key={line.id} className={`transcript-message ${line.isStudent ? 'student-message' : ''}`}><div className="message-avatar">{agent ? <Avatar agent={agent} small /> : <div className="moderator-avatar tiny">DS</div>}</div><div className="message-body"><div className="message-meta"><strong>{line.speakerName}</strong>{line.speakerId === 'moderator' && <span className="role-pill">MODERATOR</span>}<time>{formatTime(line.timestamp)}</time></div><p>{line.text}</p></div></article>; })}{interim && <div className="interim-caption"><Mic size={14} /> {interim}<span>Listening…</span></div>}{activeSpeaker === 'thinking' && <div className="thinking"><span /><span /><span /> Someone is gathering their thoughts</div>}<div ref={transcriptEnd} /></div><div className="talk-bar">{micState === 'unsupported' && <p className="mic-notice">Live browser speech recognition is unavailable here. Try the latest Chrome or Brave, or use the text box for now.</p>}{micState === 'error' && <p className="mic-notice error">{micError || 'Speech recognition failed. Try Chrome or type your response.'}</p>}{micError && micState === 'idle' && <p className="mic-notice error">{micError}</p>}<div className="input-row"><button className={`mic-button ${micState === 'listening' ? 'recording' : ''}`} onClick={micState === 'listening' ? () => stopListening(true) : startListening} aria-label={micState === 'listening' ? 'Stop microphone' : 'Take the floor with microphone'}>{micState === 'listening' ? <MicOff size={18} /> : <Mic size={18} />}</button><input id="typed-turn" placeholder={micState === 'listening' ? 'Listening — speak your point…' : 'Or type a point to join the discussion…'} onFocus={interruptAgents} onKeyDown={(event) => { if (event.key === 'Enter') { const input = event.currentTarget; void respond(input.value); input.value = ''; } }} /><button className="send-button" aria-label="Send message" onClick={() => { const input = document.getElementById('typed-turn') as HTMLInputElement; if (input.value.trim()) { void respond(input.value); input.value = ''; } }}><ArrowRight size={18} /></button></div><div className="input-hint"><span><span className="shortcut">MIC</span> Tap to take the floor <i>·</i> or type your response</span><button onClick={endRoom}>End session <ArrowRight size={13} /></button></div></div></section>
         </div>
       </section>}
 
