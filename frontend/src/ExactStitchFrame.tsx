@@ -149,11 +149,14 @@ function syncFirstTurnPrompt(document: Document, props: Props) {
     [data-gd-first-turn-prompt] > div { display:flex; flex-direction:column; gap:2px; }
     [data-gd-first-turn-prompt] strong { color:#9f3c16; font-size:12px; }
     [data-gd-first-turn-prompt] button { flex:0 0 22px; border:0; background:transparent; color:#857a75; font:20px/1 system-ui,sans-serif; cursor:pointer; }
-    [data-gd-discussion-lower] { width:min(900px,calc(100% - 32px)); display:grid; grid-template-columns:minmax(0,1fr) 220px; gap:16px; align-items:start; margin:18px auto 0; text-align:left; font:12px/1.45 Inter,system-ui,sans-serif; }
+    [data-gd-discussion-lower] { width:min(1040px,calc(100% - 32px)); display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:18px; align-items:start; margin:18px auto 0; text-align:left; font:13px/1.5 Inter,system-ui,sans-serif; }
     [data-gd-live-chat] { max-height:148px; overflow:auto; padding:10px 12px; border-top:1px solid rgba(138,114,106,.22); text-align:left; font:12px/1.45 Inter,system-ui,sans-serif; scrollbar-width:thin; }
-    [data-gd-speaking-prompts] { display:flex; flex-direction:column; gap:8px; padding:12px; border:1px solid rgba(138,114,106,.18); border-radius:12px; background:rgba(255,255,255,.72); color:#62534c; }
-    [data-gd-prompts-title] { color:#9f3c16; font-size:10px; font-weight:700; letter-spacing:.1em; }
-    [data-gd-prompt-item] { padding:8px 9px; border-radius:8px; background:#f8f4f1; line-height:1.4; }
+    [data-gd-speaking-prompts] { display:flex; flex-direction:column; gap:10px; padding:16px; border:1px solid rgba(138,114,106,.2); border-radius:14px; background:rgba(255,255,255,.82); color:#62534c; box-shadow:0 5px 18px rgba(55,35,26,.045); }
+    [data-gd-prompts-title] { color:#9f3c16; font-size:11px; font-weight:700; letter-spacing:.1em; }
+    [data-gd-prompts-hint] { margin-top:-6px; color:#85766e; font-size:11px; }
+    [data-gd-prompt-item] { width:100%; padding:11px 12px; border:1px solid rgba(138,114,106,.11); border-radius:10px; background:#f8f4f1; color:#55463e; text-align:left; font:13px/1.45 Inter,system-ui,sans-serif; cursor:pointer; transition:background 160ms ease,border-color 160ms ease,transform 160ms ease; }
+    [data-gd-prompt-item]:hover { background:#f4eae5; border-color:rgba(159,60,22,.24); transform:translateY(-1px); }
+    [data-gd-prompt-item]:focus-visible { outline:2px solid #9f3c16; outline-offset:2px; }
     [data-gd-chat-turn] { padding:8px 10px; margin:5px 0; border-radius:9px; background:#f6f3f2; color:#453a35; }
     [data-gd-chat-turn][data-student="true"] { background:#f9eee8; margin-left:22px; }
     [data-gd-chat-name] { display:block; margin-bottom:2px; color:#9f3c16; font-size:10px; font-weight:650; }
@@ -165,7 +168,7 @@ function syncFirstTurnPrompt(document: Document, props: Props) {
     @keyframes gd-voice-spin { to { transform:rotate(360deg); } }
     @media(prefers-reduced-motion:reduce) { [data-gd-voice-spinner] { animation:none; border-top-color:#9f3c16; border-right-color:#9f3c16; } }
     @keyframes gd-prompt-enter { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
-    @media(max-width:640px) { [data-gd-first-turn-prompt] { top:8px; right:10px; } [data-gd-discussion-lower] { grid-template-columns:1fr; gap:10px; } [data-gd-live-chat] { max-height:120px; font-size:11px; } [data-gd-speaking-prompts] { display:grid; grid-template-columns:1fr; } }
+    @media(max-width:640px) { [data-gd-first-turn-prompt] { top:8px; right:10px; } [data-gd-discussion-lower] { grid-template-columns:1fr; gap:12px; } [data-gd-live-chat] { max-height:120px; font-size:11px; } [data-gd-speaking-prompts] { display:grid; grid-template-columns:1fr; gap:8px; padding:14px; } }
   `;
   if (!styles.isConnected) document.head.append(styles);
 }
@@ -192,10 +195,25 @@ function syncLiveTranscript(document: Document, props: Props) {
     title.dataset.gdPromptsTitle = 'true';
     title.textContent = 'TRY SAYING';
     aside.append(title);
-    for (const phrase of ['I see it differently because…', 'Can you give a real example?', 'Building on that, what about…?']) {
-      const item = document.createElement('div');
+    const hint = document.createElement('span');
+    hint.dataset.gdPromptsHint = 'true';
+    hint.textContent = 'Based on the latest turn · click to use';
+    aside.append(hint);
+    for (const phrase of getSpeakingPrompts(props.transcript, props.selectedTopic)) {
+      const item = document.createElement('button');
+      item.type = 'button';
       item.dataset.gdPromptItem = 'true';
       item.textContent = phrase;
+      item.setAttribute('aria-label', `Use suggestion: ${phrase}`);
+      item.onclick = () => {
+        const field = document.querySelector<HTMLElement>('[contenteditable="true"], textarea, input[type="text"]');
+        if (!field) return;
+        const suggestion = item.textContent || '';
+        if ('value' in field) (field as HTMLInputElement | HTMLTextAreaElement).value = suggestion;
+        else field.textContent = suggestion;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.focus();
+      };
       aside.append(item);
     }
     lower.append(chatPanel, aside);
@@ -204,10 +222,19 @@ function syncLiveTranscript(document: Document, props: Props) {
   const chat = lower.querySelector<HTMLElement>('[data-gd-live-chat]');
   if (!chat) return;
   const turns = props.transcript.slice(-5);
-  const key = `${turns.map((turn) => `${turn.id}:${turn.text}`).join('|')}|${props.interim}|${props.micState}|${props.speechLoading}`;
+  const key = `${turns.map((turn) => `${turn.id}:${turn.text}`).join('|')}|${props.interim}|${props.micState}|${props.speechLoading}|${props.selectedTopic}`;
   if (chat.dataset.renderKey === key) return;
   chat.dataset.renderKey = key;
   chat.replaceChildren();
+  const prompts = lower.querySelector<HTMLElement>('[data-gd-speaking-prompts]');
+  if (prompts) {
+    const items = prompts.querySelectorAll<HTMLButtonElement>('[data-gd-prompt-item]');
+    const suggestions = getSpeakingPrompts(props.transcript, props.selectedTopic);
+    items.forEach((item, index) => {
+      item.textContent = suggestions[index] || '';
+      item.setAttribute('aria-label', `Use suggestion: ${suggestions[index] || ''}`);
+    });
+  }
   for (const turn of turns) {
     const row = document.createElement('article');
     row.dataset.gdChatTurn = 'true';
@@ -248,6 +275,41 @@ function syncLiveTranscript(document: Document, props: Props) {
   }
   chat.scrollTop = chat.scrollHeight;
   chat.style.display = turns.length || props.interim.trim() ? 'block' : 'none';
+}
+
+function getSpeakingPrompts(transcript: TranscriptEntry[], topic: string) {
+  const latest = transcript[transcript.length - 1];
+  const latestAi = [...transcript].reverse().find((turn) => !turn.isStudent);
+  const excerpt = (turn: TranscriptEntry | undefined) => {
+    if (!turn?.text.trim()) return '';
+    const cleaned = turn.text.trim().replace(/^[“"']|[”"']$/g, '').replace(/[.!?]+$/, '');
+    const words = cleaned.split(/\s+/);
+    const fragment = words.slice(0, 7).join(' ');
+    return fragment.length > 54 ? `${fragment.slice(0, 51).trimEnd()}…` : fragment;
+  };
+  if (latest?.isStudent) {
+    const fragment = excerpt(latest);
+    return [
+      fragment ? `Add a real example to your point about “${fragment}”…` : 'Add a real example to support your point…',
+      'What might someone who disagrees say, and how would you answer?',
+      'Who is most affected by this idea, and why?',
+    ];
+  }
+  if (latestAi) {
+    const name = latestAi.speakerName || 'the last speaker';
+    const fragment = excerpt(latestAi);
+    return [
+      `I agree with ${name} because…`,
+      fragment ? `Could you explain what you mean by “${fragment}”?` : 'Could you give a concrete example of that?',
+      `Building on ${name}’s point, how could that work in practice?`,
+    ];
+  }
+  const topicFragment = topic.trim().replace(/[.!?]+$/, '');
+  return [
+    `My view on “${topicFragment || 'this topic'}” is…`,
+    'A real example that shaped my view is…',
+    'A fair counterargument might be…',
+  ];
 }
 
 const speakerDetails: Record<string, { name: string; role: string; card: string }> = {
