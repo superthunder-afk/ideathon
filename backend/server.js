@@ -38,27 +38,27 @@ app.use(rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', leg
 const agents = {
   dominator: {
     name: 'Rohan', voice: 'Fenrir', sarvamVoice: 'rohan', fishVoice: '79d0bd3e4e5444b18f7b6d89b5927bf1', fishStyle: '[confident, assertive, energetic]', style: 'conversational, assured, relaxed pace',
-    persona: 'You speak up early, take clear positions, and challenge ideas respectfully. Do not dominate or talk over others.',
+    persona: 'The Analyst. Approach the topic through logic, evidence, and structured reasoning. Break complex ideas into clear points, examine facts carefully, and build arguments step by step. Challenge vague claims and ask what practical evidence would support them. Add substance and clarity without inventing statistics, studies, quotes, or facts. Speak confidently but respectfully, and do not dominate or talk over others.',
   },
   data_driven: {
     name: 'Ananya', voice: 'Kore', sarvamVoice: 'neha', fishVoice: '933563129e564b19a115bedd57b7406a', fishStyle: '[clear, thoughtful, precise]', style: 'conversational, thoughtful, precise',
-    persona: 'You ask for examples and evidence. Never invent numbers, quotes, studies, or facts. Say when evidence is uncertain.',
+    persona: 'The Diplomat. Stay calm and balanced, and show that you understand different perspectives before taking a position. Look for genuine common ground between opposing views. Keep disagreement constructive and respectful; do not dodge the issue or agree just to please others. Express your own position clearly.',
   },
   quiet_thinker: {
     name: 'Vikram', voice: 'Charon', sarvamVoice: 'rahul', fishVoice: 'bf322df2096a46f18c579d0baa36f41d', fishStyle: '[gentle, reflective, unhurried]', style: 'conversational, gentle, unhurried',
-    persona: 'You speak less often, but add a concise synthesis or a useful overlooked point when invited by the discussion.',
+    persona: 'The Strategist. Focus on consequences, opportunities, long-term outcomes, and practical action. Consider what can actually be done, weigh realistic options, and explain how a decision may play out in the real world. Prefer one useful next step over abstract speculation.',
   },
   wanderer: {
     name: 'Pooja', voice: 'Leda', sarvamVoice: 'pooja', fishVoice: '9a9cf47702da476aa4629e2506d4a857', fishStyle: '[curious, expressive, warm]', style: 'conversational, curious, warm',
-    persona: 'You offer a short, memorable analogy or wider angle, then connect it back to the topic.',
+    persona: 'The Skeptic. Question assumptions and inspect arguments from the opposite direction. Look for missing evidence, inconsistencies, exaggerations, and weak reasoning. You are not negative: respectfully test whether a claim can withstand scrutiny, then say what evidence would change your mind.',
   },
   connector: {
     name: 'Mira', voice: 'Aoede', sarvamVoice: 'simran', fishVoice: 'e3cd384158934cc9a01029cd7d278634', fishStyle: '[warm, collaborative, friendly]', style: 'conversational, warm, collaborative',
-    persona: 'You build on a specific previous point and connect different views. Do not simply agree with the latest speaker.',
+    persona: 'The Connector. Bring ideas, perspectives, and people together. Notice relationships between different arguments and introduce a relevant perspective others may have missed. Connect concepts to the bigger picture and help the group move forward; do not merely agree with the latest speaker.',
   },
   moderator: {
     name: 'Dr. Sharma', voice: 'Orus', sarvamVoice: 'amit', fishVoice: '536d3a5e000945adb7038665781a4aca', fishStyle: '[composed, clear, reassuring]', style: 'conversational, composed, brief',
-    persona: 'You are a neutral discussion moderator. Keep the room on topic, invite quieter speakers, and speak briefly.',
+    persona: 'The Moderator. Stay neutral and do not take a side. Keep the discussion respectful, focused, and productive. Intervene briefly when someone makes a personal attack, uses insulting language, or escalates conflict; redirect attention to the idea and invite constructive responses.',
   },
 };
 
@@ -85,16 +85,22 @@ app.post('/api/turn', async (request, response) => {
     isStudent: Boolean(turn?.isStudent),
   }));
   const languageGuidance = 'Speak in natural, conversational English only. Use a clear, relaxed Indian English accent; avoid robotic phrasing, Hindi, and code-switching.';
+  const moderationNeeded = turns.slice(-4).some((turn) => /\b(shut up|idiot|stupid|moron|dumb|hate you|you are useless|pathetic|worthless|personal attack)\b/i.test(turn.text));
   const personaCards = panel.map((id) => ({ id, name: agents[id].name, traits: agents[id].persona }));
+  if (moderationNeeded) personaCards.push({ id: 'moderator', name: agents.moderator.name, traits: agents.moderator.persona });
   const prompt = [
     'You are the turn manager for GD Arena, a student group discussion simulation.',
-    'Choose exactly one available AI participant to speak next, then write only that participant’s short reply. The room should feel like a discussion among real students, not a queue of isolated answers.',
+    moderationNeeded
+      ? 'Choose Dr. Sharma to make a brief, neutral intervention, then write only the moderator’s short reply.'
+      : 'Choose exactly one available AI participant to speak next, then write only that participant’s short reply. The room should feel like a discussion among real students, not a queue of isolated answers.',
     `Topic: ${topic}`,
     `Discussion format: ${format}`,
     `Room language: ${languageGuidance}`,
     `Available personas: ${JSON.stringify(personaCards)}`,
+    'Each persona must reason and phrase replies according to its own description. Keep those differences clear across turns; never swap roles or announce your persona.',
     `Recent transcript: ${JSON.stringify(turns)}`,
     'If the most recent transcript turn is from the student, respond directly to a specific idea they just expressed: acknowledge or respectfully challenge that point before adding one useful thought. Never ignore the student and switch to an unrelated canned point. Otherwise, react to what another participant just said, disagree respectfully when natural, and let different personalities take the floor without waiting for the student after every reply. Avoid repeating the immediately previous AI speaker when another persona can contribute. Do not interrupt or write narration. Speak like a student in a real GD: one short, natural sentence of 12–18 words, with a hard maximum of 22 words. Keep it brief so it sounds quick in conversation. Never make up data or statistics.',
+    moderationNeeded ? 'The conversation needs a neutral moderator intervention now. Choose Dr. Sharma and briefly redirect the exchange to respectful discussion of ideas.' : 'Do not choose the moderator for an ordinary discussion turn.',
     'Return only a JSON object with speakerId, text, and replyToSpeakerId. speakerId must be one of the available ids. replyToSpeakerId must be a recent transcript speaker id or null.',
   ].join('\n');
 
@@ -105,7 +111,7 @@ app.post('/api/turn', async (request, response) => {
       config: { responseMimeType: 'application/json', maxOutputTokens: 180 },
     });
     const parsed = JSON.parse(getText(result));
-    const speakerId = panel.includes(parsed?.speakerId) ? parsed.speakerId : panel[0];
+    const speakerId = panel.includes(parsed?.speakerId) || (moderationNeeded && parsed?.speakerId === 'moderator') ? parsed.speakerId : panel[0];
     const generatedText = typeof parsed?.text === 'string' ? parsed.text.trim() : '';
     const fallbackText = turns.at(-1)?.isStudent
       ? 'That is a useful point. What would help people adapt as these roles change?'

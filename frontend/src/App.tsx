@@ -19,11 +19,11 @@ type SpeechRecognitionLike = {
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 const agents: Agent[] = [
-  { id: 'dominator', name: 'Rohan', role: 'The confident starter', hue: 'lime', initials: 'R', voice: 'en-IN' },
-  { id: 'data_driven', name: 'Ananya', role: 'The evidence seeker', hue: 'blue', initials: 'A', voice: 'en-IN' },
-  { id: 'quiet_thinker', name: 'Vikram', role: 'The quiet synthesizer', hue: 'lavender', initials: 'V', voice: 'en-IN' },
-  { id: 'wanderer', name: 'Pooja', role: 'The creative tangent', hue: 'peach', initials: 'P', voice: 'en-IN' },
-  { id: 'connector', name: 'Mira', role: 'The thoughtful connector', hue: 'rose', initials: 'M', voice: 'en-IN' },
+  { id: 'dominator', name: 'Rohan', role: 'The Analyst', hue: 'lime', initials: 'R', voice: 'en-IN' },
+  { id: 'data_driven', name: 'Ananya', role: 'The Diplomat', hue: 'blue', initials: 'A', voice: 'en-IN' },
+  { id: 'quiet_thinker', name: 'Vikram', role: 'The Strategist', hue: 'lavender', initials: 'V', voice: 'en-IN' },
+  { id: 'wanderer', name: 'Pooja', role: 'The Skeptic', hue: 'peach', initials: 'P', voice: 'en-IN' },
+  { id: 'connector', name: 'Mira', role: 'The Connector', hue: 'rose', initials: 'M', voice: 'en-IN' },
 ];
 
 const topics = [
@@ -46,20 +46,28 @@ const kokoroVoices = {
 function makeFallbackReply(panel: Agent[], transcript: TranscriptEntry[], turn: number) {
   const lastTurn = transcript[transcript.length - 1];
   const lastStudent = [...transcript].reverse().find((line) => line.isStudent);
-  const speaker = panel.find((agent) => agent.id !== lastTurn?.speakerId) || panel[turn % Math.max(1, panel.length)];
+  const available = panel.filter((agent) => agent.id !== lastTurn?.speakerId);
+  const speaker = available[turn % Math.max(1, available.length)] || panel[turn % Math.max(1, panel.length)];
+  const reference = lastTurn?.text.trim().replace(/[.!?]+$/, '') || '';
+  const fragment = reference.split(/\s+/).slice(0, 7).join(' ');
+  const responses: Record<string, (point: string) => string> = {
+    dominator: (point) => `My position is clear: ${point || 'we need a practical answer'} needs a reasoned case and evidence.`,
+    data_driven: (point) => `I can see that perspective${point ? ` on ${point}` : ''}; what evidence could help us find common ground?`,
+    quiet_thinker: (point) => `The practical consequence of ${point || 'this idea'} is who acts first and what changes over time.`,
+    wanderer: (point) => `I want to test one assumption in ${point || 'that argument'}: what evidence would change our minds?`,
+    connector: (point) => `That connects ${point || 'the last point'} to the wider impact; how might both perspectives work together?`,
+  };
   if (lastTurn?.isStudent && lastStudent) {
-    const point = lastStudent.text.trim().replace(/[.!?]+$/, '').split(/\s+/).slice(0, 7).join(' ');
     return {
       speakerId: speaker.id,
       speakerName: speaker.name,
-      text: `Your point about ${point} makes sense. What support would help people who might be left out?`,
+      text: responses[speaker.id](fragment),
     };
   }
-  const previousName = lastTurn?.speakerName || 'the previous speaker';
   return {
     speakerId: speaker.id,
     speakerName: speaker.name,
-    text: `Building on ${previousName}’s point, how would that work in practice?`,
+    text: responses[speaker.id](fragment),
   };
 }
 

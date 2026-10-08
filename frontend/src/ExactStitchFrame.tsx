@@ -36,6 +36,7 @@ const clearField = (field: HTMLElement | null) => {
 };
 
 function syncLiveDocument(document: Document, props: Props) {
+  syncFrameMotion(document);
   if (props.screen === 'setup') {
     const back = document.querySelector<HTMLButtonElement>('button[aria-label="Return"]');
     if (back) back.onclick = (event) => { event.preventDefault(); props.onGoHome(); };
@@ -279,6 +280,24 @@ function syncLiveTranscript(document: Document, props: Props) {
   chat.style.display = turns.length || props.interim.trim() ? 'block' : 'none';
 }
 
+function syncFrameMotion(document: Document) {
+  const style = document.getElementById('gd-frame-interaction-style') || document.createElement('style');
+  style.id = 'gd-frame-interaction-style';
+  style.textContent = `
+    @keyframes gd-frame-page-in { from { opacity:0; transform:translateY(7px); } to { opacity:1; transform:translateY(0); } }
+    main { animation:gd-frame-page-in 300ms cubic-bezier(.2,.75,.25,1) both; }
+    button,a,input,textarea { transition:color 160ms ease,background-color 160ms ease,border-color 160ms ease,box-shadow 160ms ease,transform 160ms ease; }
+    button:active { transform:scale(.97); }
+    #mic-toggle-btn,#zen-mute-btn { min-width:54px!important; min-height:54px!important; }
+    #mic-icon,#zen-mute-icon { font-size:28px!important; }
+    #zen-mute-btn { min-height:58px!important; }
+    footer form > span.material-symbols-outlined { font-size:13px!important; }
+    footer form button[aria-label="Send argument"] span,footer form button[title="Send message"] span { font-size:14px!important; }
+    @media(prefers-reduced-motion:reduce) { main { animation:none!important; } button,a,input,textarea { transition-duration:.01ms!important; } }
+  `;
+  if (!style.isConnected) document.head.append(style);
+}
+
 function getSpeakingPrompts(transcript: TranscriptEntry[], topic: string) {
   const latest = transcript[transcript.length - 1];
   const latestAi = [...transcript].reverse().find((turn) => !turn.isStudent);
@@ -315,21 +334,21 @@ function getSpeakingPrompts(transcript: TranscriptEntry[], topic: string) {
 }
 
 const speakerDetails: Record<string, { name: string; role: string; card: string }> = {
-  dominator: { name: 'Rohan', role: 'Confident starter', card: 'Rohan' },
-  data_driven: { name: 'Ananya', role: 'Evidence seeker', card: 'Ananya' },
-  quiet_thinker: { name: 'Vikram', role: 'Quiet synthesizer', card: 'Vikram' },
-  wanderer: { name: 'Pooja', role: 'Creative tangent', card: 'Pooja' },
-  connector: { name: 'Mira', role: 'Thoughtful connector', card: 'Mira' },
+  dominator: { name: 'Rohan', role: 'The Analyst', card: 'Rohan' },
+  data_driven: { name: 'Ananya', role: 'The Diplomat', card: 'Ananya' },
+  quiet_thinker: { name: 'Vikram', role: 'The Strategist', card: 'Vikram' },
+  wanderer: { name: 'Pooja', role: 'The Skeptic', card: 'Pooja' },
+  connector: { name: 'Mira', role: 'The Connector', card: 'Mira' },
   moderator: { name: 'Dr. Sharma', role: 'Moderator', card: 'Dr. Sharma' },
 };
 
 function updateCouncilCardLabels(members: HTMLElement[], moderator?: HTMLElement) {
   const participants = [
-    { name: 'Rohan', role: 'Confident starter' },
-    { name: 'Ananya', role: 'Evidence seeker' },
-    { name: 'Vikram', role: 'Quiet synthesizer' },
-    { name: 'Pooja', role: 'Creative tangent' },
-    { name: 'Mira', role: 'Thoughtful connector' },
+    { name: 'Rohan', role: 'The Analyst' },
+    { name: 'Ananya', role: 'The Diplomat' },
+    { name: 'Vikram', role: 'The Strategist' },
+    { name: 'Pooja', role: 'The Skeptic' },
+    { name: 'Mira', role: 'The Connector' },
   ];
   const updateCard = (card: HTMLElement | undefined, name: string, role: string, isModerator = false) => {
     if (!card) return;
