@@ -26,7 +26,7 @@ app.use(cors({
     return callback(new Error('This website is not allowed to use the GD Arena API.'));
   },
 }));
-app.use(express.json({ limit: '32kb' }));
+app.use(express.json({ limit: '128kb' }));
 app.use(rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false }));
 
 const agents = {
@@ -69,7 +69,7 @@ app.post('/api/turn', async (request, response) => {
   if (!Array.isArray(panel) || panel.length < 3 || panel.length > 5 || panel.some((id) => !agents[id] || id === 'moderator')) {
     return response.status(400).json({ error: 'Choose 3 to 5 known AI participants.' });
   }
-  if (!Array.isArray(transcript) || transcript.length > 80) return response.status(400).json({ error: 'The transcript is too long.' });
+  if (!Array.isArray(transcript) || transcript.length > 160) return response.status(400).json({ error: 'The transcript is too long.' });
   if (!genai) return response.status(503).json({ error: 'Gemini is not configured yet. The room can use its demo responses.' });
 
   const turns = transcript.slice(-16).map((turn) => ({
@@ -154,7 +154,7 @@ app.post('/api/speech', async (request, response) => {
 app.post('/api/report', async (request, response) => {
   const { topic, transcript = [] } = request.body || {};
   if (!onlyString(topic, 240)) return response.status(400).json({ error: 'Add a topic under 240 characters.' });
-  if (!Array.isArray(transcript) || transcript.length > 80) return response.status(400).json({ error: 'The transcript is too long.' });
+  if (!Array.isArray(transcript) || transcript.length > 160) return response.status(400).json({ error: 'The transcript is too long.' });
   if (!genai) return response.status(503).json({ error: 'Gemini is not configured yet. The room can show its transcript snapshot.' });
 
   const studentTurns = transcript.filter((turn) => turn?.isStudent && onlyString(turn.text, 900)).map((turn) => ({
