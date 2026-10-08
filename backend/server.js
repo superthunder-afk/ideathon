@@ -105,9 +105,14 @@ app.post('/api/turn', async (request, response) => {
       config: { responseMimeType: 'application/json', maxOutputTokens: 180 },
     });
     const parsed = JSON.parse(getText(result));
-    if (!panel.includes(parsed.speakerId) || !onlyString(parsed.text, 700)) throw new Error('Gemini returned an invalid speaker turn.');
-    const replyToSpeakerId = turns.some((turn) => turn.speakerId === parsed.replyToSpeakerId) ? parsed.replyToSpeakerId : null;
-    response.json({ speakerId: parsed.speakerId, speakerName: agents[parsed.speakerId].name, text: parsed.text.trim(), replyToSpeakerId });
+    const speakerId = panel.includes(parsed?.speakerId) ? parsed.speakerId : panel[0];
+    const generatedText = typeof parsed?.text === 'string' ? parsed.text.trim() : '';
+    const fallbackText = turns.at(-1)?.isStudent
+      ? 'That is a useful point. What would help people adapt as these roles change?'
+      : 'Building on that, what would this look like in practice?';
+    const text = (generatedText || fallbackText).split(/\s+/).slice(0, 22).join(' ');
+    const replyToSpeakerId = turns.some((turn) => turn.speakerId === parsed?.replyToSpeakerId) ? parsed.replyToSpeakerId : null;
+    response.json({ speakerId, speakerName: agents[speakerId].name, text, replyToSpeakerId });
   } catch (error) {
     console.error('Gemini turn request failed:', error instanceof Error ? error.message : 'unknown error');
     response.status(502).json({ error: 'The AI could not reply just now. Try again or continue with a demo response.' });
