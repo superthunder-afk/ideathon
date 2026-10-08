@@ -98,7 +98,8 @@ function syncLiveDocument(document: Document, props: Props) {
   if (council) {
     const mobileLayout = Boolean(mobileCouncil);
     const moderator = Array.from(council.children).find((card) =>
-      Array.from(card.querySelectorAll('span')).some((label) => label.textContent?.trim() === 'Moderator'),
+      (card as HTMLElement).dataset.gdModerator === 'true'
+      || Array.from(card.querySelectorAll('span')).some((label) => label.textContent?.trim() === 'Moderator'),
     ) as HTMLElement | undefined;
     let members = Array.from(council.children).filter((item) => item !== moderator) as HTMLElement[];
     let extra = members.find((item) => item.dataset.gdArenaExtra === 'true');
@@ -106,13 +107,14 @@ function syncLiveDocument(document: Document, props: Props) {
       extra = members[members.length - 1].cloneNode(true) as HTMLElement;
       extra.dataset.gdArenaExtra = 'true';
       const name = Array.from(extra.querySelectorAll('span')).find((item) => item.textContent?.trim() === 'The Skeptic');
-      if (name) name.textContent = 'The Connector';
+      if (name) name.textContent = 'Mira';
       if (mobileLayout) council.append(extra);
       else if (moderator) council.insertBefore(extra, moderator);
     }
     if (extra && props.panelSize !== 5) extra.remove();
     members = Array.from(council.children).filter((item) => item !== moderator) as HTMLElement[];
     members.forEach((member, index) => { member.style.display = index < props.panelSize ? '' : 'none'; });
+    updateCouncilCardLabels(members, moderator);
   }
 }
 
@@ -313,13 +315,46 @@ function getSpeakingPrompts(transcript: TranscriptEntry[], topic: string) {
 }
 
 const speakerDetails: Record<string, { name: string; role: string; card: string }> = {
-  dominator: { name: 'Rohan', role: 'Confident starter', card: 'The Analyst' },
-  data_driven: { name: 'Ananya', role: 'Evidence seeker', card: 'The Diplomat' },
-  quiet_thinker: { name: 'Vikram', role: 'Quiet synthesizer', card: 'The Strategist' },
-  wanderer: { name: 'Pooja', role: 'Creative tangent', card: 'The Skeptic' },
-  connector: { name: 'Mira', role: 'Thoughtful connector', card: 'The Connector' },
-  moderator: { name: 'Dr. Sharma', role: 'Moderator', card: 'Moderator' },
+  dominator: { name: 'Rohan', role: 'Confident starter', card: 'Rohan' },
+  data_driven: { name: 'Ananya', role: 'Evidence seeker', card: 'Ananya' },
+  quiet_thinker: { name: 'Vikram', role: 'Quiet synthesizer', card: 'Vikram' },
+  wanderer: { name: 'Pooja', role: 'Creative tangent', card: 'Pooja' },
+  connector: { name: 'Mira', role: 'Thoughtful connector', card: 'Mira' },
+  moderator: { name: 'Dr. Sharma', role: 'Moderator', card: 'Dr. Sharma' },
 };
+
+function updateCouncilCardLabels(members: HTMLElement[], moderator?: HTMLElement) {
+  const participants = [
+    { name: 'Rohan', role: 'Confident starter' },
+    { name: 'Ananya', role: 'Evidence seeker' },
+    { name: 'Vikram', role: 'Quiet synthesizer' },
+    { name: 'Pooja', role: 'Creative tangent' },
+    { name: 'Mira', role: 'Thoughtful connector' },
+  ];
+  const updateCard = (card: HTMLElement | undefined, name: string, role: string, isModerator = false) => {
+    if (!card) return;
+    if (isModerator) card.dataset.gdModerator = 'true';
+    const directSpans = Array.from(card.querySelectorAll<HTMLElement>(':scope > span'));
+    const primary = card.querySelector<HTMLElement>('[data-gd-participant-name]') || directSpans[0];
+    if (!primary) return;
+    primary.dataset.gdParticipantName = 'true';
+    primary.textContent = name;
+    let secondary = card.querySelector<HTMLElement>('[data-gd-participant-personality]') || directSpans[1];
+    if (!secondary) {
+      secondary = card.ownerDocument.createElement('span');
+      secondary.className = 'text-[9px] text-on-surface-variant/60 leading-tight text-center';
+      card.append(secondary);
+    }
+    secondary.dataset.gdParticipantPersonality = 'true';
+    secondary.textContent = role;
+    if (isModerator) secondary.className = 'text-[9px] text-tertiary font-label-sm font-semibold';
+  };
+  members.forEach((card, index) => {
+    const participant = participants[index];
+    if (participant) updateCard(card, participant.name, participant.role);
+  });
+  updateCard(moderator, 'Dr. Sharma', 'Facilitator', true);
+}
 
 function updateSpeakerStage(document: Document, speakerId: string, quoteText: string) {
   const labels = Array.from(document.querySelectorAll('main span'));
