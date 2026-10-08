@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Clock3, Command, Headphones, Info, Mic, MicOff, MoreHorizontal, Pause, Play, RotateCcw, Sparkles, Volume2 } from 'lucide-react';
 import type { KokoroTTS } from 'kokoro-js';
 import type { GDReport, PersonalityType, TranscriptEntry } from './types';
+import StitchExperience from './StitchExperience';
 
 type Agent = { id: PersonalityType; name: string; role: string; hue: string; initials: string; voice: string };
 type SpeechResultEvent = Event & { results: SpeechRecognitionResultList };
@@ -460,76 +460,52 @@ function App() {
     finally { setReportLoading(false); }
   };
   const reset = () => { stopListening(); interruptAgents(); roomActiveRef.current = false; transcriptRef.current = []; setTranscript([]); setReport(null); setReportLoading(false); setScreen('setup'); setMicState('idle'); setCurrentAgent(0); };
-  const formatTime = (value: number) => `${Math.floor(value / 60).toString().padStart(2, '0')}:${(value % 60).toString().padStart(2, '0')}`;
-
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="#" onClick={(event) => { event.preventDefault(); reset(); }} aria-label="GD Arena home">
-          <span className="brand-mark"><span /><span /><span /></span><span>gd<span className="brand-dot">.</span>arena</span>
-        </a>
-        <div className="topbar-right"><span className="prototype-label"><i /> LIVE PRACTICE PROTOTYPE</span><button className="help-button" title="About this demo"><Info size={17} /></button></div>
-      </header>
-
-      {screen === 'setup' && <section className="setup-page">
-        <div className="setup-intro">
-          <p className="eyebrow"><span className="eyebrow-line" /> YOUR NEXT GD STARTS HERE</p>
-          <h1>Practice out loud.<br /><em>Show up ready.</em></h1>
-          <p className="intro-copy">A room full of different perspectives, ready when you are. Find your voice before the real room.</p>
-          <div className="intro-proof"><div className="mini-avatars">{agents.slice(0, 4).map((agent) => <Avatar key={agent.id} agent={agent} small />)}</div><span>AI participants · Honest feedback after</span></div>
-          <div className="session-stats"><div><strong>08</strong><span>MINUTES</span></div><div><strong>05</strong><span>PERSONALITIES</span></div><div><strong>01</strong><span>REAL YOU</span></div></div>
-        </div>
-
-        <section className="setup-card" aria-labelledby="setup-heading">
-          <div className="card-topline"><div><span className="step-label">01 <span>/</span> SET UP YOUR ROOM</span><h2 id="setup-heading">Pick a topic to get started</h2></div><div className="sparkle-chip"><Sparkles size={15} /></div></div>
-          <div className="field-label">CHOOSE A TOPIC <span>or write your own</span></div>
-          <div className="topic-grid">{topics.map((item, index) => <button key={item.label} className={`topic-option ${topic === item.topic && !customTopic ? 'selected' : ''}`} onClick={() => { setTopic(item.topic); setCustomTopic(''); }}><span className={`topic-icon t${index}`}>{['✳', '⌂', '↗', '◌'][index]}</span><span><strong>{item.label}</strong><small>{item.topic}</small></span>{topic === item.topic && !customTopic && <Check size={16} className="topic-check" />}</button>)}</div>
-          <label className="custom-topic"><span className="sr-only">Custom discussion topic</span><input value={customTopic} onChange={(event) => setCustomTopic(event.target.value)} placeholder="Or type a custom topic…" maxLength={120} /><Command size={15} /></label>
-          <div className="setup-divider" />
-          <div className="field-row"><div><div className="field-label">DISCUSSION FORMAT</div><p className="field-note">The moderator will guide the room.</p></div><label className="select-wrap"><select value={format} onChange={(event) => setFormat(event.target.value)}><option>Open discussion</option><option>Case-based</option><option>Controversial</option><option>Abstract</option></select><ChevronDown size={15} /></label></div>
-          <div className="setup-divider compact" />
-          <div className="field-row"><div><div className="field-label">ROOM LANGUAGE</div><p className="field-note">AI replies and speech recognition use this choice.</p></div><label className="select-wrap"><select value={language} onChange={(event) => setLanguage(event.target.value as RoomLanguage)} aria-label="Room language">{roomLanguages.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select><ChevronDown size={15} /></label></div>
-          <div className="setup-divider compact" />
-          <div className="field-row"><div><div className="field-label">VOICE ENGINE</div><p className="field-note">{speechEngine === 'kokoro' ? (language === 'en' ? 'Kokoro runs on this device; first use downloads about 90 MB.' : 'Kokoro test is English-only; other languages use the server voice.') : 'Sarvam Bulbul voices, with a different speaker for each AI personality.'}</p></div><label className="select-wrap"><select value={speechEngine} onChange={(event) => setSpeechEngine(event.target.value as SpeechEngine)} aria-label="AI voice engine"><option value="sarvam">Sarvam AI · Bulbul</option><option value="kokoro">Try Kokoro · this device</option></select><ChevronDown size={15} /></label></div>
-          <div className="setup-divider compact" />
-          <div className="field-row panel-row"><div><div className="field-label">AI PANEL SIZE</div><p className="field-note">Choose who joins the room.</p></div><div className="stepper"><button onClick={() => setPanelSize((size) => Math.max(3, size - 1))} disabled={panelSize <= 3} aria-label="Remove AI participant">−</button><strong>{panelSize}</strong><span>agents</span><button onClick={() => setPanelSize((size) => Math.min(5, size + 1))} disabled={panelSize >= 5} aria-label="Add AI participant">+</button></div></div>
-          <div className="agent-strip">{panel.map((agent) => <Avatar key={agent.id} agent={agent} />)}<span className="mod-badge">+ MOD</span></div>
-          <button className="start-button" onClick={openRoom}><span>Enter the practice room</span><ArrowRight size={18} /></button>
-          <p className="disclosure"><Info size={13} /> AI participants are AI. Your transcript is processed by Gemini. {speechEngine === 'kokoro' ? 'English Kokoro voice is generated on your device after a one-time model download; Hinglish/Hindi uses the server voice.' : `Spoken AI replies use ${ttsProvider === 'sarvam' ? 'Sarvam AI Bulbul' : ttsProvider === 'openrouter' ? 'Fish Audio via OpenRouter fallback' : ttsProvider === 'gemini' ? 'Google Gemini fallback' : 'your device voice if server voice is unavailable'}.`} Avoid sharing sensitive personal details.</p>
-        </section>
-      </section>}
-
-      {screen === 'room' && <section className="room-page">
-        <div className="room-heading"><button className="back-button" onClick={reset}><ArrowLeft size={17} /> Setup</button><div className="room-heading-copy"><span className="step-label">YOUR PRACTICE ROOM</span><h1>{selectedTopic}</h1><p>{format} <span>·</span> You + {panel.length} AI participants + moderator</p></div><div className={`timer ${seconds < 60 ? 'timer-low' : ''}`}><Clock3 size={16} /><span>{formatTime(seconds)}</span><button onClick={() => setPaused((value) => !value)} aria-label={paused ? 'Resume timer' : 'Pause timer'}>{paused ? <Play size={13} /> : <Pause size={13} />}</button></div></div>
-        <div className="room-layout">
-          <aside className="participants-panel"><div className="section-heading"><span>IN THE ROOM</span><MoreHorizontal size={18} /></div><div className="participant-list">
-            <div className={`participant-card student-card ${activeSpeaker === 'student' || micState === 'listening' ? 'speaking' : ''}`}><Avatar agent={{ id: 'quiet_thinker', name: 'You', role: 'Your seat', hue: 'ink', initials: 'Y', voice: '' }} /><div className="participant-info"><strong>You</strong><span>Your seat</span></div><span className={`presence ${micState === 'listening' ? 'listening' : ''}`} /></div>
-            {panel.map((agent) => <div className={`participant-card ${activeSpeaker === agent.id ? 'speaking' : ''}`} key={agent.id}><Avatar agent={agent} /><div className="participant-info"><strong>{agent.name}</strong><span>{agent.role}</span></div><span className={`presence ${activeSpeaker === agent.id ? 'talking' : ''}`} /></div>)}
-            <div className={`participant-card moderator-card ${activeSpeaker === 'moderator' ? 'speaking' : ''}`}><div className="moderator-avatar">DS</div><div className="participant-info"><strong>Dr. Sharma</strong><span>AI moderator</span></div><span className="presence" /></div>
-          </div><div className="room-note"><span className="note-icon"><Headphones size={15} /></span><p>The AI keeps the discussion moving. Tap the mic to take the floor; it pauses their voices right away.</p></div><div className="speech-toggle"><span><Volume2 size={15} /> Spoken replies</span><button className={`toggle ${speechOn ? 'on' : ''}`} onClick={() => setSpeechOn((value) => !value)} aria-label="Toggle spoken replies"><i /></button></div></aside>
-
-          <section className="discussion-panel"><div className="discussion-toolbar"><div><span className="live-dot" /> <strong>LIVE DISCUSSION</strong><span className="toolbar-sep">·</span><span>{transcript.filter((line) => line.isStudent).length} of your turns</span></div><span className="demo-chip">{speechEngine === 'kokoro' && language === 'en' ? kokoroStatus === 'loading' ? 'KOKORO · LOADING MODEL' : kokoroStatus === 'error' ? 'SARVAM · FALLBACK' : 'KOKORO · ON DEVICE' : ttsAvailable ? (ttsProvider === 'sarvam' ? 'SARVAM BULBUL VOICE' : ttsProvider === 'openrouter' ? 'FISH AUDIO FALLBACK' : ttsProvider === 'gemini' ? 'GEMINI VOICE' : 'DEVICE VOICE') : aiConnected ? 'DEVICE VOICE' : 'DEMO RESPONSES'}</span></div><div className="transcript" aria-live="polite">{transcript.map((line) => { const agent = agents.find((item) => item.id === line.speakerId); return <article key={line.id} className={`transcript-message ${line.isStudent ? 'student-message' : ''}`}><div className="message-avatar">{agent ? <Avatar agent={agent} small /> : <div className="moderator-avatar tiny">DS</div>}</div><div className="message-body"><div className="message-meta"><strong>{line.speakerName}</strong>{line.speakerId === 'moderator' && <span className="role-pill">MODERATOR</span>}<time>{formatTime(line.timestamp)}</time></div><p>{line.text}</p></div></article>; })}{interim && <div className="interim-caption"><Mic size={14} /> {interim}<span>Listening…</span></div>}{activeSpeaker === 'thinking' && <div className="thinking"><span /><span /><span /> Someone is gathering their thoughts</div>}<div ref={transcriptEnd} /></div><div className="talk-bar">{micState === 'unsupported' && <p className="mic-notice">Live browser speech recognition is unavailable here. Try the latest Chrome or Brave, or use the text box for now.</p>}{micState === 'error' && <p className="mic-notice error">{micError || 'Speech recognition failed. Try Chrome or type your response.'}</p>}{micError && micState === 'idle' && <p className="mic-notice error">{micError}</p>}<div className="input-row"><button className={`mic-button ${micState === 'listening' ? 'recording' : ''}`} onClick={micState === 'listening' ? () => stopListening(true) : startListening} aria-label={micState === 'listening' ? 'Stop microphone' : 'Take the floor with microphone'}>{micState === 'listening' ? <MicOff size={18} /> : <Mic size={18} />}</button><input id="typed-turn" placeholder={micState === 'listening' ? 'Listening — speak your point…' : 'Or type a point to join the discussion…'} onFocus={interruptAgents} onKeyDown={(event) => { if (event.key === 'Enter') { const input = event.currentTarget; void respond(input.value); input.value = ''; } }} /><button className="send-button" aria-label="Send message" onClick={() => { const input = document.getElementById('typed-turn') as HTMLInputElement; if (input.value.trim()) { void respond(input.value); input.value = ''; } }}><ArrowRight size={18} /></button></div><div className="input-hint"><span><span className="shortcut">MIC</span> Tap to take the floor <i>·</i> or type your response</span><button onClick={endRoom}>End session <ArrowRight size={13} /></button></div></div></section>
-        </div>
-      </section>}
-
-      {screen === 'report' && <section className="report-page">
-        <div className="report-top"><button className="back-button" onClick={reset}><ArrowLeft size={17} /> New practice</button><span className="step-label">SESSION COMPLETE</span></div>
-        <div className="report-title"><span className="report-icon"><Sparkles size={22} /></span><p className="eyebrow">YOUR PRACTICE REPORT</p><h1>Good work showing up.</h1><p>Here’s a snapshot of how you participated. Use it as a starting point, not a verdict.</p></div>
-        <div className="report-grid">
-          <div className="report-card"><span className="report-card-label">YOUR SHARE OF THE ROOM</span><strong>{report?.studentSpeakingPercentage ?? (totalWords ? Math.round(studentWords / totalWords * 100) : 0)}<small>%</small></strong><p>{studentWords} of {totalWords} words across {transcript.filter((line) => line.isStudent).length} turns</p><div className="share-bar"><i style={{ width: `${report?.studentSpeakingPercentage ?? (totalWords ? Math.round(studentWords / totalWords * 100) : 0)}%` }} /></div></div>
-          <div className="report-card"><span className="report-card-label">A MOMENT TO BUILD ON</span>{transcript.find((line) => line.isStudent) ? <><blockquote>“{transcript.find((line) => line.isStudent)?.text}”</blockquote><p>{report ? `Your overall practice score: ${report.overallScore}/10. Review the evidence-linked notes below.` : 'Use this moment as a starting point for your next round.'}</p></> : <><strong className="empty-report">Your first turn is still ahead.</strong><p>Try one more round and jump in with a short opening point.</p></>}</div>
-        </div>
-        {reportLoading && <div className="report-loading">Preparing quote-linked feedback…</div>}
-        {report && <section className="feedback-grid" aria-label="Feedback by skill">{Object.values(report.categories).map((category) => <article className="feedback-card" key={category.title}><div className="feedback-card-top"><strong>{category.title}</strong><span>{category.scoreOutOf10}/10</span></div><p>{category.feedback}</p>{category.citations.map((citation) => <blockquote key={`${citation.timestampMs}-${citation.quote}`}>“{citation.quote}”</blockquote>)}</article>)}</section>}
-        <div className="report-foot"><Info size={15} /><p>{report ? 'Feedback is based on the transcript. Quotes were checked against your exact words.' : 'This is a transcript-based demo snapshot. Connect Gemini to generate feedback with checked transcript quotes.'}</p></div>
-        <button className="start-button report-again" onClick={reset}><RotateCcw size={16} /><span>Practice another topic</span><ArrowRight size={18} /></button>
-      </section>}      <footer className="page-footer"><span>GD ARENA <i>·</i> PRACTICE MAKES PRESENCE</span><span>VOICE-FIRST GD PRACTICE <span className="footer-flower">✳</span></span></footer>
-    </main>
+    <StitchExperience
+      screen={screen}
+      topic={topic}
+      topics={topics}
+      customTopic={customTopic}
+      setCustomTopic={setCustomTopic}
+      setTopic={setTopic}
+      selectedTopic={selectedTopic}
+      panel={panel}
+      panelSize={panelSize}
+      setPanelSize={setPanelSize}
+      format={format}
+      setFormat={setFormat}
+      language={language}
+      setLanguage={setLanguage}
+      roomLanguages={roomLanguages}
+      speechEngine={speechEngine}
+      setSpeechEngine={setSpeechEngine}
+      kokoroStatus={kokoroStatus}
+      ttsProvider={ttsProvider}
+      ttsAvailable={ttsAvailable}
+      aiConnected={aiConnected}
+      seconds={seconds}
+      paused={paused}
+      setPaused={setPaused}
+      speechOn={speechOn}
+      setSpeechOn={setSpeechOn}
+      transcript={transcript}
+      interim={interim}
+      micState={micState}
+      micError={micError}
+      activeSpeaker={activeSpeaker}
+      studentWords={studentWords}
+      totalWords={totalWords}
+      report={report}
+      reportLoading={reportLoading}
+      onOpenRoom={openRoom}
+      onEndRoom={endRoom}
+      onReset={reset}
+      onStartListening={startListening}
+      onStopListening={stopListening}
+      onInterruptAgents={interruptAgents}
+      onRespond={respond}
+    />
   );
-}
-
-function Avatar({ agent, small = false }: { agent: Agent; small?: boolean }) {
-  return <span className={`avatar avatar-${agent.hue} ${small ? 'avatar-small' : ''}`} title={agent.name}><i className="avatar-antenna" /><b>{agent.initials}</b><i className="avatar-eye left" /><i className="avatar-eye right" /><i className="avatar-mouth" /></span>;
 }
 
 export default App;
