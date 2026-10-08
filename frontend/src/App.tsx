@@ -4,7 +4,7 @@ import type { GDReport, PersonalityType, TranscriptEntry } from './types';
 import StitchExperience from './StitchExperience';
 
 type Agent = { id: PersonalityType; name: string; role: string; hue: string; initials: string; voice: string };
-type SpeechResultEvent = Event & { results: SpeechRecognitionResultList };
+type SpeechResultEvent = Event & { results: SpeechRecognitionResultList; resultIndex?: number };
 type SpeechErrorEvent = Event & { error?: string; message?: string };
 type SpeechRecognitionLike = {
   continuous: boolean;
@@ -63,6 +63,7 @@ function App() {
   const [micError, setMicError] = useState('');
   const [interim, setInterim] = useState('');
   const [activeSpeaker, setActiveSpeaker] = useState('moderator');
+  const activeSpeakerRef = useRef(activeSpeaker);
   const [seconds, setSeconds] = useState(8 * 60);
   const [paused, setPaused] = useState(false);
   const [currentAgent, setCurrentAgent] = useState(0);
@@ -75,6 +76,7 @@ function App() {
   const [report, setReport] = useState<GDReport | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const recognition = useRef<SpeechRecognitionLike | null>(null);
+  const autoListenRef = useRef(false);
   const transcriptEnd = useRef<HTMLDivElement>(null);
   const remoteAudio = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -91,6 +93,7 @@ function App() {
   const ttsAvailableRef = useRef(false);
   secondsRef.current = seconds;
   roomActiveRef.current = screen === 'room';
+  activeSpeakerRef.current = activeSpeaker;
 
   const selectedTopic = customTopic.trim() || topic;
   const panel = agents.slice(0, panelSize);
@@ -104,7 +107,7 @@ function App() {
   }, [screen, paused]);
 
   useEffect(() => {
-    if (screen === 'room' && seconds === 0) interruptAgents();
+    if (screen === 'room' && seconds === 0) { stopListening(); interruptAgents(); }
   }, [screen, seconds]);
 
   useEffect(() => {
@@ -337,29 +340,42 @@ function App() {
   };
 
   const runDiscussion = async (token: number, topicOverride = selectedTopic, panelOverride = panel) => {
-    if (!aiConnected || !API_BASE_URL) return;
     while (token === discussionTokenRef.current && roomActiveRef.current && secondsRef.current > 0) {
-      const controller = new AbortController();
-      turnAbortRef.current = controller;
       setActiveSpeaker('thinking');
+      let reply: { speakerId: PersonalityType; speakerName: string; text: string } | null = null;
       try {
-        const response = await fetch(`${API_BASE_URL}/api/turn`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-          body: JSON.stringify({ topic: topicOverride, language, panel: panelOverride.map((agent) => agent.id), transcript: transcriptRef.current }),
-        });
-        if (!response.ok) throw new Error('AI turn unavailable');
-        const reply = await response.json();
+        if (aiConnected && API_BASE_URL) {
+          const controller = new AbortController();
+          turnAbortRef.current = controller;
+          const response = await fetch(`${API_BASE_URL}/api/turn`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+            body: JSON.stringify({ topic: topicOverride, language, panel: panelOverride.map((agent) => agent.id), transcript: transcriptRef.current }),
+          });
+          if (!response.ok) throw new Error('AI turn unavailable');
+          reply = await response.json();
+        }
+      } catch {
         if (token !== discussionTokenRef.current) return;
+        setAiConnected(false);
+      }
+      if (token !== discussionTokenRef.current) return;
+      if (!reply) {
+        const available = demoReplies.filter((item) => panelOverride.some((agent) => agent.id === item.agent));
+        if (!available.length) return;
+        const fallback = available[currentAgent % available.length];
+        reply = {
+          speakerId: fallback.agent,
+          speakerName: agents.find((agent) => agent.id === fallback.agent)?.name || 'AI participant',
+          text: fallback.text,
+        };
+        setCurrentAgent((value) => value + 1);
+      }
+      if (reply) {
         const aiLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - secondsRef.current, speakerId: reply.speakerId, speakerName: reply.speakerName, text: reply.text, isStudent: false };
         addEntry(aiLine);
         const completed = await speak(aiLine.text, aiLine.speakerId, token);
         if (!completed) return;
         await new Promise((resolve) => window.setTimeout(resolve, 950));
-      } catch {
-        if (controller.signal.aborted || token !== discussionTokenRef.current) return;
-        setActiveSpeaker('');
-        setAiConnected(false);
-        return;
       }
     }
   };
@@ -388,16 +404,7 @@ function App() {
     const token = interruptAgents();
     const studentLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - secondsRef.current, speakerId: 'student', speakerName: 'You', text: studentText.trim(), isStudent: true };
     addEntry(studentLine);
-    if (aiConnected && API_BASE_URL) { void runDiscussion(token); return; }
-    const timeout = window.setTimeout(() => {
-      const available = demoReplies.filter((reply) => panel.some((agent) => agent.id === reply.agent));
-      const reply = available[currentAgent % available.length];
-      setCurrentAgent((value) => value + 1);
-      const agent = agents.find((item) => item.id === reply.agent)!;
-      const aiLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - secondsRef.current, speakerId: agent.id, speakerName: agent.name, text: reply.text, isStudent: false };
-      addEntry(aiLine); void speak(aiLine.text, agent.id, token);
-    }, 450);
-    return () => window.clearTimeout(timeout);
+    void runDiscussion(token);
   };
 
   const startListening = () => {
@@ -406,20 +413,26 @@ function App() {
     const Constructor = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
     if (!Constructor) { setMicError(''); setMicState('unsupported'); return; }
     try {
-      interruptAgents();
+      autoListenRef.current = true;
       setMicError('');
       const instance = new Constructor();
-      instance.continuous = false; instance.interimResults = true;
+      instance.continuous = true; instance.interimResults = true;
       instance.lang = 'en-IN';
+      let interruptedForCurrentUtterance = false;
       instance.onresult = (event) => {
         let finalText = ''; let interimText = '';
-        for (let i = event.results.length - 1; i >= 0; i -= 1) {
+        const firstChangedResult = typeof event.resultIndex === 'number' ? event.resultIndex : 0;
+        for (let i = event.results.length - 1; i >= firstChangedResult; i -= 1) {
           const result = event.results[i];
           if (result.isFinal) finalText = result[0].transcript;
           else interimText = result[0].transcript;
         }
         setInterim(interimText);
-        if (finalText) { setInterim(''); setMicState('idle'); instance.stop(); void respond(finalText); }
+        if (interimText && !interruptedForCurrentUtterance && activeSpeakerRef.current && activeSpeakerRef.current !== 'thinking' && activeSpeakerRef.current !== 'student') {
+          interruptedForCurrentUtterance = true;
+          interruptAgents();
+        }
+        if (finalText) { setInterim(''); interruptedForCurrentUtterance = false; void respond(finalText); }
       };
       instance.onerror = (event) => {
         const messages: Record<string, string> = {
@@ -430,18 +443,27 @@ function App() {
           'no-speech': 'I didn’t hear speech. Try again and speak a little closer to the microphone.',
           aborted: 'Speech recognition stopped. Tap the microphone to try again.',
         };
+        if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network'].includes(event.error || '')) autoListenRef.current = false;
         setMicError(messages[event.error || ''] || event.message || `Speech recognition failed${event.error ? ` (${event.error})` : ''}. Try Chrome or type your response.`);
         setMicState(event.error === 'no-speech' || event.error === 'aborted' ? 'idle' : 'error');
         setInterim('');
       };
-      instance.onend = () => { setMicState((state) => state === 'listening' ? 'idle' : state); };
+      instance.onend = () => {
+        if (autoListenRef.current && roomActiveRef.current) {
+          window.setTimeout(() => {
+            if (!autoListenRef.current || !roomActiveRef.current) return;
+            try { instance.start(); setMicState('listening'); }
+            catch { setMicState('error'); }
+          }, 220);
+        } else setMicState((state) => state === 'listening' ? 'idle' : state);
+      };
       recognition.current = instance; instance.start(); setMicState('listening');
-    } catch { setMicState('error'); }
+    } catch { autoListenRef.current = false; setMicState('error'); }
   };
 
-  const stopListening = (resumeDiscussion = false) => {
+  const stopListening = (_resumeDiscussion = false) => {
+    autoListenRef.current = false;
     recognition.current?.stop(); setMicState('idle'); setMicError(''); setInterim('');
-    if (resumeDiscussion && roomActiveRef.current) void runDiscussion(discussionTokenRef.current);
   };
   const endRoom = async () => {
     stopListening(); interruptAgents(); roomActiveRef.current = false; setScreen('report'); setReport(null);

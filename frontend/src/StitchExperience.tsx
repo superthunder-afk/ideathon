@@ -98,6 +98,7 @@ export default function StitchExperience(props: StitchExperienceProps) {
       panelSize={panelSize}
       transcript={transcript}
       seconds={seconds}
+      activeSpeaker={activeSpeaker}
       micState={micState}
       onOpenRoom={onOpenRoom}
       onOpenSetup={onOpenSetup}

@@ -7,6 +7,7 @@ type Props = {
   panelSize: number;
   transcript: TranscriptEntry[];
   seconds: number;
+  activeSpeaker: string;
   micState: 'idle' | 'listening' | 'unsupported' | 'error';
   onOpenRoom: (topic?: string, panelSize?: number) => void;
   onOpenSetup: () => void;
@@ -59,8 +60,6 @@ function syncLiveDocument(document: Document, props: Props) {
   const backButton = document.querySelector<HTMLButtonElement>('button[aria-label="Return"]');
   if (backButton) backButton.onclick = (event) => { event.preventDefault(); props.onReset(); };
   const last = props.transcript[props.transcript.length - 1];
-  const quote = document.querySelector('main blockquote');
-  if (quote && last) quote.textContent = `“${last.text}”`;
   const originalTopics = [
     'Should artificial intelligence replace traditional university education?',
     'Should artificial intelligence replace traditional education?',
@@ -74,23 +73,21 @@ function syncLiveDocument(document: Document, props: Props) {
     /^\d{2}:\d{2}$/.test(item.textContent?.trim() || ''),
   );
   if (timer) timer.textContent = `${pad(Math.floor(props.seconds / 60))}:${pad(props.seconds % 60)}`;
-  const speakerName = props.micState === 'listening' ? 'You' : last?.speakerName || 'The Challenger';
+  const activeSpeaker = props.micState === 'listening' ? 'student' : props.activeSpeaker;
+  updateSpeakerStage(document, activeSpeaker, last?.text || 'The moderator is opening the discussion.');
   Array.from(document.querySelectorAll('span')).forEach((span) => {
-    const text = span.textContent?.trim();
-    if (text === 'The Challenger') span.textContent = speakerName;
-    if (text === 'The Challenger · Speaking') span.textContent = `${speakerName} · Speaking`;
-    if (text === 'Speaking now') span.textContent = props.micState === 'listening' ? 'Your turn' : 'Speaking now';
-    if (text === '5 Listening') span.textContent = `${props.panelSize + 1} Listening`;
+    if (span.textContent?.trim() === '5 Listening') span.textContent = `${props.panelSize + 1} Listening`;
   });
   const listening = props.micState === 'listening';
   const desktopMicLabel = document.getElementById('mic-label');
   const desktopMicIcon = document.getElementById('mic-icon');
   const mobileMicLabel = document.getElementById('zen-mute-label');
   const mobileMicIcon = document.getElementById('zen-mute-icon');
-  if (desktopMicLabel) desktopMicLabel.textContent = listening ? 'Stop speaking' : 'Mute Mic';
+  if (desktopMicLabel) desktopMicLabel.textContent = listening ? 'Listening on' : 'Join by voice';
   if (desktopMicIcon) desktopMicIcon.textContent = listening ? 'mic_off' : 'mic';
   if (mobileMicLabel) mobileMicLabel.textContent = listening ? 'Listening' : 'Muted';
   if (mobileMicIcon) mobileMicIcon.textContent = listening ? 'mic' : 'mic_off';
+  if (desktopMicLabel) desktopMicLabel.setAttribute('title', listening ? 'Hands-free listening is on. Speak at any time. Headphones help prevent voice echo.' : 'Enable hands-free listening. Headphones help prevent voice echo.');
   const mobileCouncil = document.querySelector('.grid.grid-cols-5');
   const council = mobileCouncil || Array.from(document.querySelectorAll('main .flex.flex-wrap')).find((item) => item.children.length === 5);
   if (council) {
@@ -114,6 +111,98 @@ function syncLiveDocument(document: Document, props: Props) {
   }
 }
 
+const speakerDetails: Record<string, { name: string; role: string; card: string }> = {
+  dominator: { name: 'Rohan', role: 'Confident starter', card: 'The Analyst' },
+  data_driven: { name: 'Ananya', role: 'Evidence seeker', card: 'The Diplomat' },
+  quiet_thinker: { name: 'Vikram', role: 'Quiet synthesizer', card: 'The Strategist' },
+  wanderer: { name: 'Pooja', role: 'Creative tangent', card: 'The Skeptic' },
+  connector: { name: 'Mira', role: 'Thoughtful connector', card: 'The Connector' },
+  moderator: { name: 'Dr. Sharma', role: 'Moderator', card: 'Moderator' },
+};
+
+function updateSpeakerStage(document: Document, speakerId: string, quoteText: string) {
+  const labels = Array.from(document.querySelectorAll('main span'));
+  const nameNode = labels.find((node) => ['The Challenger', 'Dr. Sharma', 'Rohan', 'Ananya', 'Vikram', 'Pooja', 'Mira', 'You', 'The council is choosing a speaker'].includes(node.textContent?.trim() || ''));
+  const stageCard = document.querySelector<HTMLElement>('.pink-speaker-glow') || (nameNode?.parentElement as HTMLElement | null);
+  const speakerName = nameNode;
+  const stageImage = (document.querySelector('.pink-speaker-glow [style*="background-image"]') || stageCard?.querySelector<HTMLElement>('[style*="background-image"]')) as HTMLElement | null;
+  const quote = document.querySelector<HTMLElement>('main blockquote');
+  const details = speakerDetails[speakerId];
+  const resolvedName = speakerId === 'student' ? 'You' : speakerId === 'thinking' ? 'The council is choosing a speaker' : details?.name || 'Room is ready';
+  const resolvedRole = speakerId === 'student' ? 'Your point' : speakerId === 'thinking' ? 'Listening to the room' : details?.role || 'AI participant';
+
+  if (speakerName && speakerName.textContent?.trim() !== resolvedName) {
+    speakerName.textContent = resolvedName;
+    const parent = speakerName.parentElement;
+    const secondary = speakerName.nextElementSibling as HTMLElement | null;
+    if (secondary?.tagName === 'SPAN') secondary.textContent = resolvedRole;
+    if (parent) {
+      parent.classList.remove('gd-stage-arrive');
+      void parent.offsetWidth;
+      parent.classList.add('gd-stage-arrive');
+    }
+  }
+  if (quote && quote.textContent !== `“${quoteText}”`) {
+    quote.textContent = `“${quoteText}”`;
+    quote.classList.remove('gd-quote-arrive');
+    void quote.offsetWidth;
+    quote.classList.add('gd-quote-arrive');
+  }
+
+  const council = document.querySelector('.grid.grid-cols-5') || Array.from(document.querySelectorAll('main .flex.flex-wrap')).find((item) => item.children.length >= 4);
+  const cards = council ? Array.from(council.children) as HTMLElement[] : [];
+  const sourceCard = cards.find((card) => Array.from(card.querySelectorAll('span')).some((span) => span.textContent?.trim() === details?.card));
+  cards.forEach((card) => card.classList.toggle('gd-is-speaking', card === sourceCard && Boolean(details && speakerId !== 'moderator')));
+  if (details && speakerId !== 'student' && speakerId !== 'thinking' && speakerId !== 'moderator' && sourceCard && stageImage) {
+    const sourceImage = sourceCard.querySelector<HTMLElement>('[style*="background-image"]');
+    if (sourceImage) {
+      if (document.documentElement.dataset.gdActiveSpeaker !== speakerId) animateAvatarHandoff(document, sourceImage, stageImage, stageCard);
+      stageImage.style.backgroundImage = sourceImage.style.backgroundImage;
+      stageImage.style.backgroundPosition = sourceImage.style.backgroundPosition;
+      stageImage.style.backgroundSize = sourceImage.style.backgroundSize;
+      if (stageCard) stageCard.dataset.gdSpeakerId = speakerId;
+    }
+  }
+  document.documentElement.dataset.gdActiveSpeaker = speakerId;
+
+  const status = labels.find((node) => ['Speaking now', 'The Challenger · Speaking'].includes(node.textContent?.trim() || ''));
+  if (status) status.textContent = speakerId === 'thinking' ? 'Choosing next speaker' : speakerId === 'student' ? 'Your turn' : 'Speaking now';
+  const css = document.getElementById('gd-stage-motion-style') || document.createElement('style');
+  css.id = 'gd-stage-motion-style';
+  css.textContent = `
+    @keyframes gd-stage-enter { from { opacity: .45; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes gd-quote-enter { from { opacity: .35; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+    .gd-stage-arrive { animation: gd-stage-enter 460ms cubic-bezier(.2,.75,.25,1) both; }
+    .gd-quote-arrive { animation: gd-quote-enter 380ms ease-out both; }
+    .gd-is-speaking > div:first-child { border-color: rgba(236,72,153,.68)!important; box-shadow: 0 0 0 3px rgba(236,72,153,.10), 0 8px 24px rgba(236,72,153,.13)!important; transform: translateY(-3px); }
+    .gd-is-speaking { transition: transform 360ms ease, filter 360ms ease; }
+    .gd-avatar-flight { position: fixed!important; z-index: 99999!important; margin: 0!important; pointer-events: none!important; border-radius: 50%!important; box-shadow: 0 8px 28px rgba(236,72,153,.25)!important; transition: left 620ms cubic-bezier(.2,.75,.25,1), top 620ms cubic-bezier(.2,.75,.25,1), width 620ms cubic-bezier(.2,.75,.25,1), height 620ms cubic-bezier(.2,.75,.25,1), opacity 620ms ease!important; }
+    @media (prefers-reduced-motion: reduce) { .gd-stage-arrive,.gd-quote-arrive { animation-duration: 1ms!important; } .gd-avatar-flight { transition-duration: 1ms!important; } }
+  `;
+  if (!css.isConnected) document.head.append(css);
+}
+
+function animateAvatarHandoff(document: Document, source: HTMLElement, target: HTMLElement, stageCard: HTMLElement | null) {
+  const from = source.getBoundingClientRect();
+  const to = target.getBoundingClientRect();
+  if (!from.width || !to.width) return;
+  const flight = document.createElement('div');
+  flight.className = 'gd-avatar-flight';
+  flight.style.cssText = `left:${from.left}px;top:${from.top}px;width:${from.width}px;height:${from.height}px;background-image:${source.style.backgroundImage};background-position:${source.style.backgroundPosition};background-size:${source.style.backgroundSize};background-repeat:no-repeat;`;
+  document.body.append(flight);
+  target.style.transition = 'opacity 180ms ease';
+  target.style.opacity = '0';
+  if (stageCard) stageCard.style.setProperty('--gd-stage-handoff', '1');
+  requestAnimationFrame(() => {
+    flight.style.left = `${to.left}px`;
+    flight.style.top = `${to.top}px`;
+    flight.style.width = `${to.width}px`;
+    flight.style.height = `${to.height}px`;
+    flight.style.opacity = '.86';
+  });
+  window.setTimeout(() => { flight.remove(); target.style.opacity = '1'; if (stageCard) stageCard.style.removeProperty('--gd-stage-handoff'); }, 620);
+}
+
 export default function ExactStitchFrame(props: Props) {
   const frame = useRef<HTMLIFrameElement>(null);
   const propsRef = useRef(props);
@@ -135,7 +224,7 @@ export default function ExactStitchFrame(props: Props) {
   useEffect(() => {
     const document = frame.current?.contentDocument;
     if (document) syncLiveDocument(document, props);
-  }, [props.screen, props.selectedTopic, props.panelSize, props.transcript, props.seconds, props.micState, mobile]);
+  }, [props.screen, props.selectedTopic, props.panelSize, props.transcript, props.seconds, props.micState, props.activeSpeaker, mobile]);
 
   const onFrameLoad = () => {
     const document = frame.current?.contentDocument;
