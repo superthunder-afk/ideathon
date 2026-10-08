@@ -3,6 +3,7 @@ export type PersonalityType =
   | 'data_driven'
   | 'quiet_thinker'
   | 'wanderer'
+  | 'connector'
   | 'moderator';
 
 export interface Participant {

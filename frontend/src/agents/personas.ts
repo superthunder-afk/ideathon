@@ -47,4 +47,12 @@ export const AI_PERSONAS: Record<string, PersonaDefinition> = {
     speakingTendency: 'divergent',
     interruptionTolerance: 0.7,
   },
+  connector: {
+    type: 'connector',
+    name: 'Mira (The Thoughtful Connector)',
+    promptDescription:
+      'You listen for ideas that can be connected, briefly acknowledge the people behind them, and offer a practical synthesis. You do not simply agree with the last speaker.',
+    speakingTendency: 'analytical',
+    interruptionTolerance: 0.75,
+  },
 };
