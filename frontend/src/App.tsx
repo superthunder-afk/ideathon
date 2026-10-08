@@ -156,11 +156,21 @@ function App() {
     remoteAudio.current?.pause();
     if (speechOn && aiConnected && ttsAvailableRef.current && API_BASE_URL) {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/speech`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, speakerId }),
-          signal: controller.signal,
-        });
+        const requestController = new AbortController();
+        const cancelRequest = () => requestController.abort();
+        controller.signal.addEventListener('abort', cancelRequest, { once: true });
+        const timeout = window.setTimeout(() => requestController.abort(), 8000);
+        let response: Response;
+        try {
+          response = await fetch(`${API_BASE_URL}/api/speech`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, speakerId }),
+            signal: requestController.signal,
+          });
+        } finally {
+          window.clearTimeout(timeout);
+          controller.signal.removeEventListener('abort', cancelRequest);
+        }
         if (response.ok) {
           const result = await response.json();
           const audio = new Audio(`data:${result.mimeType};base64,${result.audioBase64}`);
