@@ -4,12 +4,13 @@ import type { GDReport, PersonalityType, TranscriptEntry } from './types';
 
 type Agent = { id: PersonalityType; name: string; role: string; hue: string; initials: string; voice: string };
 type SpeechResultEvent = Event & { results: SpeechRecognitionResultList };
+type SpeechErrorEvent = Event & { error?: string; message?: string };
 type SpeechRecognitionLike = {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
   onresult: ((event: SpeechResultEvent) => void) | null;
-  onerror: ((event: Event) => void) | null;
+  onerror: ((event: SpeechErrorEvent) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
@@ -48,6 +49,7 @@ function App() {
   const [format, setFormat] = useState('Open discussion');
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [micState, setMicState] = useState<'idle' | 'listening' | 'unsupported' | 'error'>('idle');
+  const [micError, setMicError] = useState('');
   const [interim, setInterim] = useState('');
   const [activeSpeaker, setActiveSpeaker] = useState('moderator');
   const [seconds, setSeconds] = useState(8 * 60);
@@ -167,8 +169,9 @@ function App() {
   const startListening = () => {
     const speechWindow = window as Window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
     const Constructor = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
-    if (!Constructor) { setMicState('unsupported'); return; }
+    if (!Constructor) { setMicError(''); setMicState('unsupported'); return; }
     try {
+      setMicError('');
       const instance = new Constructor();
       instance.continuous = false; instance.interimResults = true; instance.lang = 'en-IN';
       instance.onresult = (event) => {
@@ -181,13 +184,25 @@ function App() {
         setInterim(interimText);
         if (finalText) { setInterim(''); setMicState('idle'); respond(finalText); }
       };
-      instance.onerror = () => { setMicState('error'); setInterim(''); };
+      instance.onerror = (event) => {
+        const messages: Record<string, string> = {
+          'not-allowed': 'The browser blocked microphone access. Check this site’s permission and your device privacy settings, then reload.',
+          'service-not-allowed': 'This browser cannot reach its speech recognition service. Try Chrome with Google speech services enabled, or type your response.',
+          'audio-capture': 'No microphone is available to the browser. Check that your mic is connected and not in use by another app.',
+          network: 'Speech recognition could not connect. Check your internet connection, then try again.',
+          'no-speech': 'I didn’t hear speech. Try again and speak a little closer to the microphone.',
+          aborted: 'Speech recognition stopped. Tap the microphone to try again.',
+        };
+        setMicError(messages[event.error || ''] || event.message || `Speech recognition failed${event.error ? ` (${event.error})` : ''}. Try Chrome or type your response.`);
+        setMicState(event.error === 'no-speech' || event.error === 'aborted' ? 'idle' : 'error');
+        setInterim('');
+      };
       instance.onend = () => { setMicState((state) => state === 'listening' ? 'idle' : state); };
       recognition.current = instance; instance.start(); setMicState('listening');
     } catch { setMicState('error'); }
   };
 
-  const stopListening = () => { recognition.current?.stop(); setMicState('idle'); setInterim(''); };
+  const stopListening = () => { recognition.current?.stop(); setMicState('idle'); setMicError(''); setInterim(''); };
   const endRoom = async () => {
     stopListening(); window.speechSynthesis?.cancel(); remoteAudio.current?.pause(); setScreen('report'); setReport(null);
     if (!aiConnected || !API_BASE_URL || transcript.length < 2) return;
@@ -247,7 +262,7 @@ function App() {
             <div className={`participant-card moderator-card ${activeSpeaker === 'moderator' ? 'speaking' : ''}`}><div className="moderator-avatar">DS</div><div className="participant-info"><strong>Dr. Sharma</strong><span>AI moderator</span></div><span className="presence" /></div>
           </div><div className="room-note"><span className="note-icon"><Headphones size={15} /></span><p>Each person has a distinct point of view. Let them finish, then jump in when you have something to add.</p></div><div className="speech-toggle"><span><Volume2 size={15} /> Spoken replies</span><button className={`toggle ${speechOn ? 'on' : ''}`} onClick={() => setSpeechOn((value) => !value)} aria-label="Toggle spoken replies"><i /></button></div></aside>
 
-          <section className="discussion-panel"><div className="discussion-toolbar"><div><span className="live-dot" /> <strong>LIVE DISCUSSION</strong><span className="toolbar-sep">·</span><span>{transcript.filter((line) => line.isStudent).length} of your turns</span></div><span className="demo-chip">{aiConnected ? 'GEMINI VOICE' : 'DEMO RESPONSES'}</span></div><div className="transcript" aria-live="polite">{transcript.map((line) => { const agent = agents.find((item) => item.id === line.speakerId); return <article key={line.id} className={`transcript-message ${line.isStudent ? 'student-message' : ''}`}><div className="message-avatar">{agent ? <Avatar agent={agent} small /> : <div className="moderator-avatar tiny">DS</div>}</div><div className="message-body"><div className="message-meta"><strong>{line.speakerName}</strong>{line.speakerId === 'moderator' && <span className="role-pill">MODERATOR</span>}<time>{formatTime(line.timestamp)}</time></div><p>{line.text}</p></div></article>; })}{interim && <div className="interim-caption"><Mic size={14} /> {interim}<span>Listening…</span></div>}{activeSpeaker === 'thinking' && <div className="thinking"><span /><span /><span /> Someone is gathering their thoughts</div>}<div ref={transcriptEnd} /></div><div className="talk-bar">{micState === 'unsupported' && <p className="mic-notice">Live browser speech recognition is unavailable here. Try the latest Chrome or Brave, or use the text box for now.</p>}{micState === 'error' && <p className="mic-notice error">Microphone could not start. Check browser permission, then try again.</p>}<div className="input-row"><button className={`mic-button ${micState === 'listening' ? 'recording' : ''}`} onClick={micState === 'listening' ? stopListening : startListening} aria-label={micState === 'listening' ? 'Stop microphone' : 'Start microphone'}>{micState === 'listening' ? <MicOff size={18} /> : <Mic size={18} />}</button><input id="typed-turn" placeholder={micState === 'listening' ? 'Listening — speak your point…' : 'Or type a point to join the discussion…'} onKeyDown={(event) => { if (event.key === 'Enter') { const input = event.currentTarget; void respond(input.value); input.value = ''; } }} /><button className="send-button" aria-label="Send message" onClick={() => { const input = document.getElementById('typed-turn') as HTMLInputElement; if (input.value.trim()) { void respond(input.value); input.value = ''; } }}><ArrowRight size={18} /></button></div><div className="input-hint"><span><span className="shortcut">SPACE</span> Hold to speak <i>·</i> or type your response</span><button onClick={endRoom}>End session <ArrowRight size={13} /></button></div></div></section>
+          <section className="discussion-panel"><div className="discussion-toolbar"><div><span className="live-dot" /> <strong>LIVE DISCUSSION</strong><span className="toolbar-sep">·</span><span>{transcript.filter((line) => line.isStudent).length} of your turns</span></div><span className="demo-chip">{aiConnected ? 'GEMINI VOICE' : 'DEMO RESPONSES'}</span></div><div className="transcript" aria-live="polite">{transcript.map((line) => { const agent = agents.find((item) => item.id === line.speakerId); return <article key={line.id} className={`transcript-message ${line.isStudent ? 'student-message' : ''}`}><div className="message-avatar">{agent ? <Avatar agent={agent} small /> : <div className="moderator-avatar tiny">DS</div>}</div><div className="message-body"><div className="message-meta"><strong>{line.speakerName}</strong>{line.speakerId === 'moderator' && <span className="role-pill">MODERATOR</span>}<time>{formatTime(line.timestamp)}</time></div><p>{line.text}</p></div></article>; })}{interim && <div className="interim-caption"><Mic size={14} /> {interim}<span>Listening…</span></div>}{activeSpeaker === 'thinking' && <div className="thinking"><span /><span /><span /> Someone is gathering their thoughts</div>}<div ref={transcriptEnd} /></div><div className="talk-bar">{micState === 'unsupported' && <p className="mic-notice">Live browser speech recognition is unavailable here. Try the latest Chrome or Brave, or use the text box for now.</p>}{micState === 'error' && <p className="mic-notice error">{micError || 'Speech recognition failed. Try Chrome or type your response.'}</p>}{micError && micState === 'idle' && <p className="mic-notice error">{micError}</p>}<div className="input-row"><button className={`mic-button ${micState === 'listening' ? 'recording' : ''}`} onClick={micState === 'listening' ? stopListening : startListening} aria-label={micState === 'listening' ? 'Stop microphone' : 'Start microphone'}>{micState === 'listening' ? <MicOff size={18} /> : <Mic size={18} />}</button><input id="typed-turn" placeholder={micState === 'listening' ? 'Listening — speak your point…' : 'Or type a point to join the discussion…'} onKeyDown={(event) => { if (event.key === 'Enter') { const input = event.currentTarget; void respond(input.value); input.value = ''; } }} /><button className="send-button" aria-label="Send message" onClick={() => { const input = document.getElementById('typed-turn') as HTMLInputElement; if (input.value.trim()) { void respond(input.value); input.value = ''; } }}><ArrowRight size={18} /></button></div><div className="input-hint"><span><span className="shortcut">SPACE</span> Hold to speak <i>·</i> or type your response</span><button onClick={endRoom}>End session <ArrowRight size={13} /></button></div></div></section>
         </div>
       </section>}
 
