@@ -57,6 +57,16 @@ function makeFallbackReply(panel: Agent[], transcript: TranscriptEntry[], turn: 
     wanderer: (point) => `I want to test one assumption in ${point || 'that argument'}: what evidence would change our minds?`,
     connector: (point) => `That connects ${point || 'the last point'} to the wider impact; how might both perspectives work together?`,
   };
+  if (lastTurn?.speakerId === 'moderator' && lastTurn.timestamp === 0 && lastTurn.text.startsWith('Hello everyone.')) {
+    const openingResponses: Record<string, string> = {
+      dominator: 'I’d begin with the evidence: what do we know, and which claims still need support?',
+      data_driven: 'There are several valid perspectives here; let’s hear what each side values before judging.',
+      quiet_thinker: 'I’d start with the practical impact: who is affected, and what could realistically change?',
+      wanderer: 'Before taking a position, I’d test the assumptions behind the most common claim on this topic.',
+      connector: 'This topic connects immediate choices with long-term effects; both perspectives belong in the discussion.',
+    };
+    return { speakerId: speaker.id, speakerName: speaker.name, text: openingResponses[speaker.id] };
+  }
   if (lastTurn?.isStudent && lastStudent) {
     return {
       speakerId: speaker.id,
@@ -449,12 +459,26 @@ function App() {
     unlockAudio();
     sessionTopicRef.current = topicOverride?.trim() || selectedTopic;
     sessionPanelRef.current = agents.slice(0, panelSizeOverride ?? panelSize);
-    interruptAgents();
+    const token = interruptAgents();
     transcriptRef.current = [];
-    setTranscript([]); setInterim(''); interimSpeechRef.current = ''; pendingFinalSpeechRef.current = ''; setFirstTurn(true);
-    setSeconds(8 * 60); secondsRef.current = 8 * 60; setPaused(false); setScreen('room'); roomActiveRef.current = true; setActiveSpeaker('student');
-    /* Begin is a deliberate user gesture, so start hands-free speech capture here. */
+    setTranscript([]); setInterim(''); interimSpeechRef.current = ''; pendingFinalSpeechRef.current = ''; setFirstTurn(false);
+    setSeconds(8 * 60); secondsRef.current = 8 * 60; setPaused(false); setScreen('room'); roomActiveRef.current = true; setActiveSpeaker('moderator');
     startListening();
+    const openingText = `Hello everyone. We’re discussing “${sessionTopicRef.current}”. Let’s keep our points concise, listen to each other, and explore different views. Who would like to start?`;
+    const opening: TranscriptEntry = {
+      id: crypto.randomUUID(),
+      timestamp: 0,
+      speakerId: 'moderator',
+      speakerName: 'Dr. Sharma',
+      text: openingText,
+      isStudent: false,
+    };
+    addEntry(opening);
+    setSpeechLoading(speechOn);
+    void (async () => {
+      const completed = await speak(opening.text, 'moderator', token);
+      if (completed) await runDiscussion(token, sessionTopicRef.current, sessionPanelRef.current);
+    })();
   };
 
   const respond = async (studentText: string) => {

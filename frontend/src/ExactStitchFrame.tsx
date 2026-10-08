@@ -93,6 +93,16 @@ function syncLiveDocument(document: Document, props: Props) {
   if (desktopMicIcon) desktopMicIcon.textContent = listening ? 'mic_off' : 'mic';
   if (mobileMicLabel) mobileMicLabel.textContent = listening ? 'Listening' : 'Muted';
   if (mobileMicIcon) mobileMicIcon.textContent = listening ? 'mic' : 'mic_off';
+  const desktopMicButton = document.getElementById('mic-toggle-btn');
+  const mobileMicButton = document.getElementById('zen-mute-btn');
+  [desktopMicButton, mobileMicButton].forEach((button) => {
+    if (!button) return;
+    button.classList.toggle('gd-mic-live', listening);
+    button.setAttribute('aria-pressed', String(listening));
+    button.setAttribute('aria-label', listening ? 'Microphone is on. Click to stop listening.' : 'Microphone is off. Click to start listening.');
+  });
+  desktopMicIcon?.classList.toggle('gd-mic-active', listening);
+  mobileMicIcon?.classList.toggle('gd-mic-active', listening);
   if (desktopMicLabel) desktopMicLabel.setAttribute('title', listening ? 'Hands-free listening is on. Speak at any time. Headphones help prevent voice echo.' : 'Enable hands-free listening. Headphones help prevent voice echo.');
   const mobileCouncil = document.querySelector('.grid.grid-cols-5');
   const council = mobileCouncil || Array.from(document.querySelectorAll('main .flex.flex-wrap')).find((item) => item.children.length === 5);
@@ -288,12 +298,19 @@ function syncFrameMotion(document: Document) {
     main { animation:gd-frame-page-in 300ms cubic-bezier(.2,.75,.25,1) both; }
     button,a,input,textarea { transition:color 160ms ease,background-color 160ms ease,border-color 160ms ease,box-shadow 160ms ease,transform 160ms ease; }
     button:active { transform:scale(.97); }
-    #mic-toggle-btn,#zen-mute-btn { min-width:54px!important; min-height:54px!important; }
-    #mic-icon,#zen-mute-icon { font-size:28px!important; }
+    #mic-toggle-btn,#zen-mute-btn { min-width:54px!important; min-height:54px!important; position:relative!important; transition:color 180ms ease,background-color 180ms ease,box-shadow 180ms ease,transform 180ms ease!important; }
+    #mic-icon,#zen-mute-icon { position:relative; isolation:isolate; font-size:28px!important; transition:color 180ms ease,text-shadow 180ms ease; }
+    #mic-icon.gd-mic-active,#zen-mute-icon.gd-mic-active { color:#146940!important; text-shadow:0 0 12px rgba(20,105,64,.36); }
+    #mic-icon.gd-mic-active::before,#zen-mute-icon.gd-mic-active::before { content:""; position:absolute; z-index:-1; inset:-10px; border-radius:50%; background:radial-gradient(circle,rgba(136,215,165,.92) 0%,rgba(164,244,191,.54) 45%,rgba(164,244,191,0) 76%); animation:gd-mic-glowball 1.6s ease-in-out infinite; }
+    #mic-toggle-btn.gd-mic-live,#zen-mute-btn.gd-mic-live { border-color:rgba(20,105,64,.32)!important; background-color:#edf8f0!important; box-shadow:0 0 0 3px rgba(20,105,64,.09),0 0 22px rgba(72,171,105,.24)!important; }
+    #mic-toggle-btn.gd-mic-live::after,#zen-mute-btn.gd-mic-live::after { content:""; position:absolute; inset:-5px; border:1px solid rgba(72,171,105,.45); border-radius:inherit; pointer-events:none; animation:gd-mic-ring 1.8s ease-out infinite; }
     #zen-mute-btn { min-height:58px!important; }
     footer form > span.material-symbols-outlined { font-size:13px!important; }
     footer form button[aria-label="Send argument"] span,footer form button[title="Send message"] span { font-size:14px!important; }
+    @keyframes gd-mic-glowball { 0%,100% { opacity:.58; transform:scale(.78); } 50% { opacity:1; transform:scale(1.14); } }
+    @keyframes gd-mic-ring { 0% { opacity:.55; transform:scale(.96); } 100% { opacity:0; transform:scale(1.16); } }
     @media(prefers-reduced-motion:reduce) { main { animation:none!important; } button,a,input,textarea { transition-duration:.01ms!important; } }
+    @media(prefers-reduced-motion:reduce) { #mic-icon.gd-mic-active::before,#zen-mute-icon.gd-mic-active::before,#mic-toggle-btn.gd-mic-live::after,#zen-mute-btn.gd-mic-live::after { animation:none!important; opacity:.9; } }
   `;
   if (!style.isConnected) document.head.append(style);
 }
