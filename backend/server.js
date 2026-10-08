@@ -128,7 +128,6 @@ app.post('/api/speech', async (request, response) => {
         body: JSON.stringify({
           model: openRouterTtsModel,
           input: `${agents[speakerId].fishStyle} ${text.trim()}`,
-          voice: 'default',
           response_format: 'mp3',
         }),
         signal: AbortSignal.timeout(12_000),
