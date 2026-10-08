@@ -6,13 +6,17 @@ import { GoogleGenAI } from '@google/genai';
 const app = express();
 const port = Number(process.env.PORT || 4000);
 const textModel = process.env.GEMINI_TEXT_MODEL || 'gemini-3.8-flash';
-const ttsModel = process.env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-lite-tts';
+const geminiTtsModel = process.env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-lite-tts';
 const apiKey = process.env.GEMINI_API_KEY;
+const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+const openRouterTtsModel = process.env.OPENROUTER_TTS_MODEL || 'fish-audio/s2.1-pro-free:free';
 const genai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 const parsedTtsDisabledUntil = Date.parse(process.env.GEMINI_TTS_DISABLED_UNTIL || '');
 const ttsDisabledUntil = Number.isFinite(parsedTtsDisabledUntil) ? parsedTtsDisabledUntil : 0;
 let ttsUnavailableUntil = 0;
-const ttsIsAvailable = () => Boolean(genai) && Date.now() >= ttsDisabledUntil && Date.now() >= ttsUnavailableUntil;
+const geminiTtsIsAvailable = () => Boolean(genai) && Date.now() >= ttsDisabledUntil && Date.now() >= ttsUnavailableUntil;
+const ttsIsAvailable = () => Boolean(openRouterApiKey) || geminiTtsIsAvailable();
+const activeTtsProvider = () => openRouterApiKey ? 'openrouter' : geminiTtsIsAvailable() ? 'gemini' : 'device';
 const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',')
   .map((origin) => origin.trim())
@@ -31,27 +35,27 @@ app.use(rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', leg
 
 const agents = {
   dominator: {
-    name: 'Rohan', voice: 'Fenrir', style: 'conversational, assured, relaxed pace',
+    name: 'Rohan', voice: 'Fenrir', fishStyle: '[confident, assertive, energetic]', style: 'conversational, assured, relaxed pace',
     persona: 'You speak up early, take clear positions, and challenge ideas respectfully. Do not dominate or talk over others.',
   },
   data_driven: {
-    name: 'Ananya', voice: 'Kore', style: 'conversational, thoughtful, precise',
+    name: 'Ananya', voice: 'Kore', fishStyle: '[clear, thoughtful, precise]', style: 'conversational, thoughtful, precise',
     persona: 'You ask for examples and evidence. Never invent numbers, quotes, studies, or facts. Say when evidence is uncertain.',
   },
   quiet_thinker: {
-    name: 'Vikram', voice: 'Charon', style: 'conversational, gentle, unhurried',
+    name: 'Vikram', voice: 'Charon', fishStyle: '[gentle, reflective, unhurried]', style: 'conversational, gentle, unhurried',
     persona: 'You speak less often, but add a concise synthesis or a useful overlooked point when invited by the discussion.',
   },
   wanderer: {
-    name: 'Pooja', voice: 'Leda', style: 'conversational, curious, warm',
+    name: 'Pooja', voice: 'Leda', fishStyle: '[curious, expressive, warm]', style: 'conversational, curious, warm',
     persona: 'You offer a short, memorable analogy or wider angle, then connect it back to the topic.',
   },
   connector: {
-    name: 'Mira', voice: 'Aoede', style: 'conversational, warm, collaborative',
+    name: 'Mira', voice: 'Aoede', fishStyle: '[warm, collaborative, friendly]', style: 'conversational, warm, collaborative',
     persona: 'You build on a specific previous point and connect different views. Do not simply agree with the latest speaker.',
   },
   moderator: {
-    name: 'Dr. Sharma', voice: 'Orus', style: 'conversational, composed, brief',
+    name: 'Dr. Sharma', voice: 'Orus', fishStyle: '[composed, clear, reassuring]', style: 'conversational, composed, brief',
     persona: 'You are a neutral discussion moderator. Keep the room on topic, invite quieter speakers, and speak briefly.',
   },
 };
@@ -60,7 +64,7 @@ const onlyString = (value, max) => typeof value === 'string' && value.trim().len
 const getText = (response) => response?.text || '';
 
 app.get('/health', (_request, response) => {
-  response.json({ ok: true, aiConfigured: Boolean(genai), ttsAvailable: ttsIsAvailable(), textModel, ttsModel });
+  response.json({ ok: true, aiConfigured: Boolean(genai), ttsAvailable: ttsIsAvailable(), ttsProvider: activeTtsProvider(), textModel, ttsModel: openRouterTtsModel });
 });
 
 app.post('/api/turn', async (request, response) => {
@@ -80,7 +84,7 @@ app.post('/api/turn', async (request, response) => {
   }));
   const languageGuidance = {
     en: 'Speak in natural, conversational English only.',
-    'en-hi': 'Code-switch naturally between conversational English and Hindi in Roman script (Hinglish). Follow how the student speaks; do not translate every sentence.',
+    'en-hi': 'Code-switch naturally between conversational English and Hindi in Devanagari script (Hinglish). Keep English words in Latin script. Follow how the student speaks; do not translate every sentence.',
     hi: 'Speak in natural, conversational Hindi using Devanagari script.',
   }[language] || 'Speak in natural, conversational Hinglish, following how the student speaks.';
   const personaCards = panel.map((id) => ({ id, name: agents[id].name, traits: agents[id].persona }));
@@ -113,16 +117,39 @@ app.post('/api/turn', async (request, response) => {
 });
 
 app.post('/api/speech', async (request, response) => {
-  const { text, speakerId = 'moderator' } = request.body || {};
+  const { text, speakerId = 'moderator', language = 'en-hi' } = request.body || {};
   if (!onlyString(text, 700)) return response.status(400).json({ error: 'Speech text must be under 700 characters.' });
   if (!agents[speakerId]) return response.status(400).json({ error: 'Unknown speaker.' });
-  if (!genai) return response.status(503).json({ error: 'Gemini voice is not configured. The browser can speak this turn.' });
-  if (!ttsIsAvailable()) return response.status(429).json({ error: 'Gemini voice is temporarily unavailable. Using your device voice instead.', code: 'tts_unavailable' });
+  if (openRouterApiKey) {
+    try {
+      const fishResponse = await fetch('https://openrouter.ai/api/v1/audio/speech', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${openRouterApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: openRouterTtsModel,
+          input: `${agents[speakerId].fishStyle} ${text.trim()}`,
+          voice: 'default',
+          response_format: 'mp3',
+        }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!fishResponse.ok) throw new Error(`OpenRouter TTS returned HTTP ${fishResponse.status}: ${(await fishResponse.text()).slice(0, 240)}`);
+      const audio = Buffer.from(await fishResponse.arrayBuffer()).toString('base64');
+      if (!onlyString(audio, 4_000_000)) throw new Error('OpenRouter TTS returned no audio.');
+      return response.json({ mimeType: fishResponse.headers.get('content-type') || 'audio/mpeg', audioBase64: audio, ttsProvider: 'openrouter' });
+    } catch (error) {
+      console.error('OpenRouter speech request failed:', error instanceof Error ? error.message : 'unknown error');
+      if (!geminiTtsIsAvailable()) {
+        return response.status(502).json({ error: 'Fish Audio could not generate this reply. Using your device voice instead.', code: 'tts_error' });
+      }
+    }
+  }
+  if (!geminiTtsIsAvailable()) return response.status(429).json({ error: 'AI voice is temporarily unavailable. Using your device voice instead.', code: 'tts_unavailable' });
 
   try {
     const persona = agents[speakerId];
     const interaction = await genai.interactions.create({
-      model: ttsModel,
+      model: geminiTtsModel,
       input: [{
         type: 'user_input',
         content: [{
@@ -136,7 +163,7 @@ app.post('/api/speech', async (request, response) => {
     });
     const audio = interaction.output_audio?.data;
     if (!audio) throw new Error('The speech model returned no audio.');
-    response.json({ mimeType: 'audio/wav', audioBase64: audio });
+    response.json({ mimeType: 'audio/wav', audioBase64: audio, ttsProvider: 'gemini' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown error';
     const isRateLimited = /429|rate.?limit|quota/i.test(message);
