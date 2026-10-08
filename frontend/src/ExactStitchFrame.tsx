@@ -73,8 +73,7 @@ function syncLiveDocument(document: Document, props: Props) {
     /^\d{2}:\d{2}$/.test(item.textContent?.trim() || ''),
   );
   if (timer) timer.textContent = `${pad(Math.floor(props.seconds / 60))}:${pad(props.seconds % 60)}`;
-  const activeSpeaker = props.micState === 'listening' ? 'student' : props.activeSpeaker;
-  updateSpeakerStage(document, activeSpeaker, last?.text || 'The moderator is opening the discussion.');
+  updateSpeakerStage(document, props.activeSpeaker, last?.text || 'The moderator is opening the discussion.');
   Array.from(document.querySelectorAll('span')).forEach((span) => {
     if (span.textContent?.trim() === '5 Listening') span.textContent = `${props.panelSize + 1} Listening`;
   });
@@ -166,11 +165,34 @@ function updateSpeakerStage(document: Document, speakerId: string, quoteText: st
         }
       }
       if (document.documentElement.dataset.gdActiveSpeaker !== speakerId) animateAvatarHandoff(document, sourceImage, stageImage, stageCard);
+      stageImage.textContent = '';
+      stageImage.style.background = '';
+      stageImage.style.display = '';
+      stageImage.style.placeItems = '';
+      stageImage.style.color = '';
+      stageImage.style.font = '';
       stageImage.style.backgroundImage = sourceImage.style.backgroundImage;
       stageImage.style.backgroundPosition = sourceImage.style.backgroundPosition;
       stageImage.style.backgroundSize = sourceImage.style.backgroundSize;
       if (stageCard) stageCard.dataset.gdSpeakerId = speakerId;
     }
+  } else if (speakerId === 'student' && stageImage) {
+    const stageImageFrame = stageImage.parentElement as HTMLElement | null;
+    if (stageImageFrame) {
+      const frameSize = stageImageFrame.getBoundingClientRect();
+      if (frameSize.width < 32 || frameSize.height < 32) {
+        stageImageFrame.style.width = '88px';
+        stageImageFrame.style.height = '88px';
+        stageImageFrame.style.flexShrink = '0';
+      }
+    }
+    stageImage.textContent = 'You';
+    stageImage.style.backgroundImage = 'none';
+    stageImage.style.background = 'linear-gradient(140deg, #dbeafe, #f5e9ff)';
+    stageImage.style.display = 'grid';
+    stageImage.style.placeItems = 'center';
+    stageImage.style.color = '#6644a6';
+    stageImage.style.font = '600 18px Inter, sans-serif';
   }
   document.documentElement.dataset.gdActiveSpeaker = speakerId;
 

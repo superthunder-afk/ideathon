@@ -63,7 +63,6 @@ function App() {
   const [micError, setMicError] = useState('');
   const [interim, setInterim] = useState('');
   const [activeSpeaker, setActiveSpeaker] = useState('moderator');
-  const activeSpeakerRef = useRef(activeSpeaker);
   const [seconds, setSeconds] = useState(8 * 60);
   const [paused, setPaused] = useState(false);
   const [currentAgent, setCurrentAgent] = useState(0);
@@ -77,6 +76,11 @@ function App() {
   const [reportLoading, setReportLoading] = useState(false);
   const recognition = useRef<SpeechRecognitionLike | null>(null);
   const autoListenRef = useRef(false);
+  const studentSpeechActiveRef = useRef(false);
+  const userSpeechTimeoutRef = useRef<number | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const micVadFrameRef = useRef<number | null>(null);
   const transcriptEnd = useRef<HTMLDivElement>(null);
   const remoteAudio = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -93,7 +97,6 @@ function App() {
   const ttsAvailableRef = useRef(false);
   secondsRef.current = seconds;
   roomActiveRef.current = screen === 'room';
-  activeSpeakerRef.current = activeSpeaker;
 
   const selectedTopic = customTopic.trim() || topic;
   const panel = agents.slice(0, panelSize);
@@ -132,6 +135,10 @@ function App() {
 
   useEffect(() => () => {
     recognition.current?.stop();
+    if (micVadFrameRef.current !== null) window.cancelAnimationFrame(micVadFrameRef.current);
+    micSourceRef.current?.disconnect();
+    micStreamRef.current?.getTracks().forEach((track) => track.stop());
+    if (userSpeechTimeoutRef.current !== null) window.clearTimeout(userSpeechTimeoutRef.current);
     window.speechSynthesis?.cancel();
     remoteAudio.current?.pause();
     audioSourceRef.current?.stop();
@@ -379,6 +386,74 @@ function App() {
       }
     }
   };
+  const markStudentSpeech = () => {
+    if (!studentSpeechActiveRef.current) {
+      studentSpeechActiveRef.current = true;
+      interruptAgents();
+      setActiveSpeaker('student');
+    }
+    if (userSpeechTimeoutRef.current !== null) window.clearTimeout(userSpeechTimeoutRef.current);
+    userSpeechTimeoutRef.current = window.setTimeout(() => {
+      if (!studentSpeechActiveRef.current || !roomActiveRef.current) return;
+      studentSpeechActiveRef.current = false;
+      setInterim('');
+      void runDiscussion(discussionTokenRef.current);
+    }, 8000);
+  };
+  const clearStudentSpeech = () => {
+    studentSpeechActiveRef.current = false;
+    if (userSpeechTimeoutRef.current !== null) window.clearTimeout(userSpeechTimeoutRef.current);
+    userSpeechTimeoutRef.current = null;
+  };
+  const startMicLevelMonitor = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      });
+      if (!autoListenRef.current || !roomActiveRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      micStreamRef.current = stream;
+      const context = audioContextRef.current || new window.AudioContext();
+      audioContextRef.current = context;
+      if (context.state === 'suspended') await context.resume();
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.2;
+      source.connect(analyser);
+      micSourceRef.current = source;
+      const samples = new Uint8Array(analyser.fftSize);
+      let voicedFrames = 0;
+      const monitor = () => {
+        if (!autoListenRef.current) return;
+        analyser.getByteTimeDomainData(samples);
+        let energy = 0;
+        for (const sample of samples) {
+          const amplitude = (sample - 128) / 128;
+          energy += amplitude * amplitude;
+        }
+        const level = Math.sqrt(energy / samples.length);
+        voicedFrames = level > 0.016 ? voicedFrames + 1 : 0;
+        if (voicedFrames >= 5) markStudentSpeech();
+        micVadFrameRef.current = window.requestAnimationFrame(monitor);
+      };
+      micVadFrameRef.current = window.requestAnimationFrame(monitor);
+    } catch {
+      /* The speech recognizer can still work on browsers that don't allow a parallel level monitor. */
+    }
+  };
+  const stopMicLevelMonitor = () => {
+    if (micVadFrameRef.current !== null) window.cancelAnimationFrame(micVadFrameRef.current);
+    micVadFrameRef.current = null;
+    micSourceRef.current?.disconnect();
+    micSourceRef.current = null;
+    micStreamRef.current?.getTracks().forEach((track) => track.stop());
+    micStreamRef.current = null;
+  };
 
   const openRoom = (topicOverride?: string, panelSizeOverride?: number) => {
     unlockAudio();
@@ -400,6 +475,7 @@ function App() {
 
   const respond = async (studentText: string) => {
     if (!studentText.trim()) return;
+    clearStudentSpeech();
     unlockAudio();
     const token = interruptAgents();
     const studentLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - secondsRef.current, speakerId: 'student', speakerName: 'You', text: studentText.trim(), isStudent: true };
@@ -415,10 +491,10 @@ function App() {
     try {
       autoListenRef.current = true;
       setMicError('');
+      void startMicLevelMonitor();
       const instance = new Constructor();
       instance.continuous = true; instance.interimResults = true;
       instance.lang = 'en-IN';
-      let interruptedForCurrentUtterance = false;
       instance.onresult = (event) => {
         let finalText = ''; let interimText = '';
         const firstChangedResult = typeof event.resultIndex === 'number' ? event.resultIndex : 0;
@@ -428,11 +504,8 @@ function App() {
           else interimText = result[0].transcript;
         }
         setInterim(interimText);
-        if (interimText && !interruptedForCurrentUtterance && activeSpeakerRef.current && activeSpeakerRef.current !== 'thinking' && activeSpeakerRef.current !== 'student') {
-          interruptedForCurrentUtterance = true;
-          interruptAgents();
-        }
-        if (finalText) { setInterim(''); interruptedForCurrentUtterance = false; void respond(finalText); }
+        if (interimText) markStudentSpeech();
+        if (finalText) { setInterim(''); void respond(finalText); }
       };
       instance.onerror = (event) => {
         const messages: Record<string, string> = {
@@ -443,7 +516,11 @@ function App() {
           'no-speech': 'I didn’t hear speech. Try again and speak a little closer to the microphone.',
           aborted: 'Speech recognition stopped. Tap the microphone to try again.',
         };
-        if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network'].includes(event.error || '')) autoListenRef.current = false;
+        if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network'].includes(event.error || '')) {
+          autoListenRef.current = false;
+          stopMicLevelMonitor();
+          clearStudentSpeech();
+        }
         setMicError(messages[event.error || ''] || event.message || `Speech recognition failed${event.error ? ` (${event.error})` : ''}. Try Chrome or type your response.`);
         setMicState(event.error === 'no-speech' || event.error === 'aborted' ? 'idle' : 'error');
         setInterim('');
@@ -463,6 +540,8 @@ function App() {
 
   const stopListening = (_resumeDiscussion = false) => {
     autoListenRef.current = false;
+    stopMicLevelMonitor();
+    clearStudentSpeech();
     recognition.current?.stop(); setMicState('idle'); setMicError(''); setInterim('');
   };
   const endRoom = async () => {
