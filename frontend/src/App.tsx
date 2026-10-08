@@ -32,6 +32,12 @@ const topics = [
   { label: 'Abstract', topic: 'Does silence communicate more than words?' },
 ];
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+type RoomLanguage = 'en' | 'en-hi' | 'hi';
+const roomLanguages: Array<{ id: RoomLanguage; label: string; note: string }> = [
+  { id: 'en', label: 'English', note: 'English discussion' },
+  { id: 'en-hi', label: 'Hinglish', note: 'English + Hindi mix' },
+  { id: 'hi', label: 'Hindi', note: 'हिंदी चर्चा' },
+];
 
 const demoReplies = [
   { agent: 'data_driven' as PersonalityType, text: 'I agree that convenience matters, but we should separate short-term efficiency from long-term impact. What kind of work are we talking about, and who benefits from the change?' },
@@ -47,6 +53,7 @@ function App() {
   const [customTopic, setCustomTopic] = useState('');
   const [panelSize, setPanelSize] = useState(4);
   const [format, setFormat] = useState('Open discussion');
+  const [language, setLanguage] = useState<RoomLanguage>('en-hi');
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [micState, setMicState] = useState<'idle' | 'listening' | 'unsupported' | 'error'>('idle');
   const [micError, setMicError] = useState('');
@@ -62,6 +69,15 @@ function App() {
   const recognition = useRef<SpeechRecognitionLike | null>(null);
   const transcriptEnd = useRef<HTMLDivElement>(null);
   const remoteAudio = useRef<HTMLAudioElement | null>(null);
+  const transcriptRef = useRef<TranscriptEntry[]>([]);
+  const discussionTokenRef = useRef(0);
+  const turnAbortRef = useRef<AbortController | null>(null);
+  const speechAbortRef = useRef<AbortController | null>(null);
+  const playbackDoneRef = useRef<(() => void) | null>(null);
+  const secondsRef = useRef(seconds);
+  const roomActiveRef = useRef(screen === 'room');
+  secondsRef.current = seconds;
+  roomActiveRef.current = screen === 'room';
   const selectedTopic = customTopic.trim() || topic;
   const panel = agents.slice(0, panelSize);
   const studentWords = transcript.filter((line) => line.isStudent).reduce((sum, line) => sum + line.text.trim().split(/\s+/).filter(Boolean).length, 0);
@@ -72,6 +88,10 @@ function App() {
     const timer = window.setInterval(() => setSeconds((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearInterval(timer);
   }, [screen, paused]);
+
+  useEffect(() => {
+    if (screen === 'room' && seconds === 0) interruptAgents();
+  }, [screen, seconds]);
 
   useEffect(() => {
     transcriptEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -93,32 +113,81 @@ function App() {
     remoteAudio.current?.pause();
   }, []);
 
-  const addEntry = (entry: TranscriptEntry) => setTranscript((lines) => [...lines, entry]);
-  const speak = async (text: string, speakerId: string) => {
-    if (!speechOn) return;
+  const addEntry = (entry: TranscriptEntry) => {
+    transcriptRef.current = [...transcriptRef.current, entry];
+    setTranscript(transcriptRef.current);
+  };
+  const interruptAgents = () => {
+    discussionTokenRef.current += 1;
+    turnAbortRef.current?.abort();
+    speechAbortRef.current?.abort();
+    playbackDoneRef.current?.();
+    playbackDoneRef.current = null;
     window.speechSynthesis?.cancel();
     remoteAudio.current?.pause();
-    if (aiConnected && API_BASE_URL) {
+    if (remoteAudio.current) remoteAudio.current.src = '';
+    setActiveSpeaker('');
+    return discussionTokenRef.current;
+  };
+  const speak = async (text: string, speakerId: string, token: number) => {
+    if (token !== discussionTokenRef.current) return false;
+    const controller = new AbortController();
+    speechAbortRef.current = controller;
+    const waitForPlayback = () => new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (playbackDoneRef.current === finish) playbackDoneRef.current = null;
+        controller.signal.removeEventListener('abort', finish);
+        resolve();
+      };
+      playbackDoneRef.current = finish;
+      controller.signal.addEventListener('abort', finish, { once: true });
+    });
+    window.speechSynthesis?.cancel();
+    remoteAudio.current?.pause();
+    if (speechOn && aiConnected && API_BASE_URL) {
       try {
         const response = await fetch(`${API_BASE_URL}/api/speech`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text, speakerId }),
+          signal: controller.signal,
         });
         if (response.ok) {
           const result = await response.json();
           const audio = new Audio(`data:${result.mimeType};base64,${result.audioBase64}`);
           remoteAudio.current = audio;
           setActiveSpeaker(speakerId);
-          audio.onended = () => setActiveSpeaker('');
+          const playback = waitForPlayback();
+          const finishPlayback = playbackDoneRef.current;
+          audio.onended = () => {
+            if (token === discussionTokenRef.current) setActiveSpeaker('');
+            finishPlayback?.();
+          };
+          audio.onerror = () => finishPlayback?.();
           await audio.play();
-          return;
+          await playback;
+          return token === discussionTokenRef.current;
         }
-      } catch { /* Fall back to the browser voice if the speech API is unavailable. */ }
+      } catch {
+        if (controller.signal.aborted) return false;
+        /* Fall back to the browser voice if the speech API is unavailable. */
+      }
     }
-    if (!('speechSynthesis' in window)) return;
+    if (controller.signal.aborted || token !== discussionTokenRef.current) return false;
+    if (!speechOn) {
+      const playback = waitForPlayback();
+      const finishPlayback = playbackDoneRef.current;
+      window.setTimeout(() => finishPlayback?.(), Math.max(1100, text.trim().split(/\s+/).length * 260));
+      await playback;
+      return token === discussionTokenRef.current;
+    }
+    if (!('speechSynthesis' in window)) return true;
     const utterance = new SpeechSynthesisUtterance(text);
     const voices = window.speechSynthesis.getVoices();
-    const indianVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith('en-in'));
+    const targetLocale = language === 'hi' ? 'hi-in' : 'en-in';
+    const indianVoice = voices.find((voice) => voice.lang.toLowerCase() === targetLocale);
     const index = agents.findIndex((agent) => agent.id === speakerId);
     const voiceCandidates = voices.filter((voice) => voice.lang.toLowerCase().startsWith('en'));
     if (indianVoice) utterance.voice = indianVoice;
@@ -126,44 +195,80 @@ function App() {
     utterance.rate = speakerId === 'dominator' ? 1.06 : speakerId === 'quiet_thinker' ? 0.92 : 0.98;
     utterance.pitch = speakerId === 'wanderer' ? 1.14 : speakerId === 'data_driven' ? 0.92 : 1;
     utterance.onstart = () => setActiveSpeaker(speakerId);
-    utterance.onend = () => setActiveSpeaker('');
+    const playback = waitForPlayback();
+    const finishPlayback = playbackDoneRef.current;
+    utterance.onend = () => {
+      if (token === discussionTokenRef.current) setActiveSpeaker('');
+      finishPlayback?.();
+    };
+    utterance.onerror = () => finishPlayback?.();
     window.speechSynthesis.speak(utterance);
+    await playback;
+    return token === discussionTokenRef.current;
+  };
+
+  const runDiscussion = async (token: number) => {
+    if (!aiConnected || !API_BASE_URL) return;
+    while (token === discussionTokenRef.current && roomActiveRef.current && secondsRef.current > 0) {
+      const controller = new AbortController();
+      turnAbortRef.current = controller;
+      setActiveSpeaker('thinking');
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/turn`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+          body: JSON.stringify({ topic: selectedTopic, language, panel: panel.map((agent) => agent.id), transcript: transcriptRef.current }),
+        });
+        if (!response.ok) throw new Error('AI turn unavailable');
+        const reply = await response.json();
+        if (token !== discussionTokenRef.current) return;
+        const aiLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - secondsRef.current, speakerId: reply.speakerId, speakerName: reply.speakerName, text: reply.text, isStudent: false };
+        addEntry(aiLine);
+        const completed = await speak(aiLine.text, aiLine.speakerId, token);
+        if (!completed) return;
+        await new Promise((resolve) => window.setTimeout(resolve, 950));
+      } catch {
+        if (controller.signal.aborted || token !== discussionTokenRef.current) return;
+        setActiveSpeaker('');
+        setAiConnected(false);
+        return;
+      }
+    }
   };
 
   const openRoom = () => {
+    const token = interruptAgents();
+    transcriptRef.current = [];
+    const openingByLanguage: Record<RoomLanguage, string> = {
+      en: `Welcome, everyone. Today we are discussing: “${selectedTopic}”. Keep your points concise, listen to each other, and make space for different views. You have eight minutes. Who would like to open?`,
+      'en-hi': `Hi everyone, aaj ka topic hai: “${selectedTopic}”. Keep your points short, listen to each other, and make space for different views. We have eight minutes. Who wants to start?`,
+      hi: `सभी का स्वागत है। आज हम चर्चा करेंगे: “${selectedTopic}”। अपनी बात संक्षेप में रखें, एक-दूसरे को सुनें और अलग विचारों के लिए जगह दें। हमारे पास आठ मिनट हैं। कौन शुरुआत करना चाहेगा?`,
+    };
     const opening: TranscriptEntry = {
       id: crypto.randomUUID(), timestamp: 0, speakerId: 'moderator', speakerName: 'Dr. Sharma · Moderator',
-      text: `Welcome, everyone. Today we are discussing: “${selectedTopic}”. Keep your points concise, listen to each other, and make space for different views. You have eight minutes. Who would like to open?`, isStudent: false,
+      text: openingByLanguage[language], isStudent: false,
     };
-    setTranscript([opening]); setSeconds(8 * 60); setPaused(false); setScreen('room'); setActiveSpeaker('moderator');
-    speak(opening.text, 'moderator');
+    transcriptRef.current = [opening];
+    setTranscript(transcriptRef.current); setSeconds(8 * 60); secondsRef.current = 8 * 60; setPaused(false); setScreen('room'); roomActiveRef.current = true; setActiveSpeaker('moderator');
+    void speak(opening.text, 'moderator', token).then((completed) => {
+      if (completed && token === discussionTokenRef.current) void runDiscussion(token);
+    });
   };
 
   const respond = async (studentText: string) => {
     if (!studentText.trim()) return;
-    const studentLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - seconds, speakerId: 'student', speakerName: 'You', text: studentText.trim(), isStudent: true };
+    const token = interruptAgents();
+    const studentLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - secondsRef.current, speakerId: 'student', speakerName: 'You', text: studentText.trim(), isStudent: true };
     addEntry(studentLine);
-    setActiveSpeaker('thinking');
-    if (aiConnected && API_BASE_URL) {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/turn`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ topic: selectedTopic, language: 'en-hi', panel: panel.map((agent) => agent.id), transcript: [...transcript, studentLine] }),
-        });
-        if (!response.ok) throw new Error('AI turn unavailable');
-        const reply = await response.json();
-        const aiLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - seconds, speakerId: reply.speakerId, speakerName: reply.speakerName, text: reply.text, isStudent: false };
-        addEntry(aiLine); void speak(aiLine.text, aiLine.speakerId); return;
-      } catch { setAiConnected(false); }
-    }
-    window.setTimeout(() => {
+    if (aiConnected && API_BASE_URL) { void runDiscussion(token); return; }
+    const timeout = window.setTimeout(() => {
       const available = demoReplies.filter((reply) => panel.some((agent) => agent.id === reply.agent));
       const reply = available[currentAgent % available.length];
       setCurrentAgent((value) => value + 1);
       const agent = agents.find((item) => item.id === reply.agent)!;
-      const aiLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - seconds, speakerId: agent.id, speakerName: agent.name, text: reply.text, isStudent: false };
-      addEntry(aiLine); speak(aiLine.text, agent.id);
+      const aiLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - secondsRef.current, speakerId: agent.id, speakerName: agent.name, text: reply.text, isStudent: false };
+      addEntry(aiLine); void speak(aiLine.text, agent.id, token);
     }, 450);
+    return () => window.clearTimeout(timeout);
   };
 
   const startListening = () => {
@@ -171,9 +276,11 @@ function App() {
     const Constructor = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
     if (!Constructor) { setMicError(''); setMicState('unsupported'); return; }
     try {
+      interruptAgents();
       setMicError('');
       const instance = new Constructor();
-      instance.continuous = false; instance.interimResults = true; instance.lang = 'en-IN';
+      instance.continuous = false; instance.interimResults = true;
+      instance.lang = language === 'hi' ? 'hi-IN' : 'en-IN';
       instance.onresult = (event) => {
         let finalText = ''; let interimText = '';
         for (let i = event.results.length - 1; i >= 0; i -= 1) {
@@ -182,7 +289,7 @@ function App() {
           else interimText = result[0].transcript;
         }
         setInterim(interimText);
-        if (finalText) { setInterim(''); setMicState('idle'); respond(finalText); }
+        if (finalText) { setInterim(''); setMicState('idle'); instance.stop(); void respond(finalText); }
       };
       instance.onerror = (event) => {
         const messages: Record<string, string> = {
@@ -202,9 +309,12 @@ function App() {
     } catch { setMicState('error'); }
   };
 
-  const stopListening = () => { recognition.current?.stop(); setMicState('idle'); setMicError(''); setInterim(''); };
+  const stopListening = (resumeDiscussion = false) => {
+    recognition.current?.stop(); setMicState('idle'); setMicError(''); setInterim('');
+    if (resumeDiscussion && roomActiveRef.current) void runDiscussion(discussionTokenRef.current);
+  };
   const endRoom = async () => {
-    stopListening(); window.speechSynthesis?.cancel(); remoteAudio.current?.pause(); setScreen('report'); setReport(null);
+    stopListening(); interruptAgents(); roomActiveRef.current = false; setScreen('report'); setReport(null);
     if (!aiConnected || !API_BASE_URL || transcript.length < 2) return;
     setReportLoading(true);
     try {
@@ -217,7 +327,7 @@ function App() {
     } catch { setAiConnected(false); }
     finally { setReportLoading(false); }
   };
-  const reset = () => { stopListening(); window.speechSynthesis?.cancel(); remoteAudio.current?.pause(); setTranscript([]); setReport(null); setReportLoading(false); setScreen('setup'); setMicState('idle'); setCurrentAgent(0); };
+  const reset = () => { stopListening(); interruptAgents(); roomActiveRef.current = false; transcriptRef.current = []; setTranscript([]); setReport(null); setReportLoading(false); setScreen('setup'); setMicState('idle'); setCurrentAgent(0); };
   const formatTime = (value: number) => `${Math.floor(value / 60).toString().padStart(2, '0')}:${(value % 60).toString().padStart(2, '0')}`;
 
   return (
@@ -246,6 +356,8 @@ function App() {
           <div className="setup-divider" />
           <div className="field-row"><div><div className="field-label">DISCUSSION FORMAT</div><p className="field-note">The moderator will guide the room.</p></div><label className="select-wrap"><select value={format} onChange={(event) => setFormat(event.target.value)}><option>Open discussion</option><option>Case-based</option><option>Controversial</option><option>Abstract</option></select><ChevronDown size={15} /></label></div>
           <div className="setup-divider compact" />
+          <div className="field-row"><div><div className="field-label">ROOM LANGUAGE</div><p className="field-note">AI replies and speech recognition use this choice.</p></div><label className="select-wrap"><select value={language} onChange={(event) => setLanguage(event.target.value as RoomLanguage)} aria-label="Room language">{roomLanguages.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select><ChevronDown size={15} /></label></div>
+          <div className="setup-divider compact" />
           <div className="field-row panel-row"><div><div className="field-label">AI PANEL SIZE</div><p className="field-note">Choose who joins the room.</p></div><div className="stepper"><button onClick={() => setPanelSize((size) => Math.max(3, size - 1))} disabled={panelSize <= 3} aria-label="Remove AI participant">−</button><strong>{panelSize}</strong><span>agents</span><button onClick={() => setPanelSize((size) => Math.min(5, size + 1))} disabled={panelSize >= 5} aria-label="Add AI participant">+</button></div></div>
           <div className="agent-strip">{panel.map((agent) => <Avatar key={agent.id} agent={agent} />)}<span className="mod-badge">+ MOD</span></div>
           <button className="start-button" onClick={openRoom}><span>Enter the practice room</span><ArrowRight size={18} /></button>
@@ -260,9 +372,9 @@ function App() {
             <div className={`participant-card student-card ${activeSpeaker === 'student' || micState === 'listening' ? 'speaking' : ''}`}><Avatar agent={{ id: 'quiet_thinker', name: 'You', role: 'Your seat', hue: 'ink', initials: 'Y', voice: '' }} /><div className="participant-info"><strong>You</strong><span>Your seat</span></div><span className={`presence ${micState === 'listening' ? 'listening' : ''}`} /></div>
             {panel.map((agent) => <div className={`participant-card ${activeSpeaker === agent.id ? 'speaking' : ''}`} key={agent.id}><Avatar agent={agent} /><div className="participant-info"><strong>{agent.name}</strong><span>{agent.role}</span></div><span className={`presence ${activeSpeaker === agent.id ? 'talking' : ''}`} /></div>)}
             <div className={`participant-card moderator-card ${activeSpeaker === 'moderator' ? 'speaking' : ''}`}><div className="moderator-avatar">DS</div><div className="participant-info"><strong>Dr. Sharma</strong><span>AI moderator</span></div><span className="presence" /></div>
-          </div><div className="room-note"><span className="note-icon"><Headphones size={15} /></span><p>Each person has a distinct point of view. Let them finish, then jump in when you have something to add.</p></div><div className="speech-toggle"><span><Volume2 size={15} /> Spoken replies</span><button className={`toggle ${speechOn ? 'on' : ''}`} onClick={() => setSpeechOn((value) => !value)} aria-label="Toggle spoken replies"><i /></button></div></aside>
+          </div><div className="room-note"><span className="note-icon"><Headphones size={15} /></span><p>The AI keeps the discussion moving. Tap the mic to take the floor; it pauses their voices right away.</p></div><div className="speech-toggle"><span><Volume2 size={15} /> Spoken replies</span><button className={`toggle ${speechOn ? 'on' : ''}`} onClick={() => setSpeechOn((value) => !value)} aria-label="Toggle spoken replies"><i /></button></div></aside>
 
-          <section className="discussion-panel"><div className="discussion-toolbar"><div><span className="live-dot" /> <strong>LIVE DISCUSSION</strong><span className="toolbar-sep">·</span><span>{transcript.filter((line) => line.isStudent).length} of your turns</span></div><span className="demo-chip">{aiConnected ? 'GEMINI VOICE' : 'DEMO RESPONSES'}</span></div><div className="transcript" aria-live="polite">{transcript.map((line) => { const agent = agents.find((item) => item.id === line.speakerId); return <article key={line.id} className={`transcript-message ${line.isStudent ? 'student-message' : ''}`}><div className="message-avatar">{agent ? <Avatar agent={agent} small /> : <div className="moderator-avatar tiny">DS</div>}</div><div className="message-body"><div className="message-meta"><strong>{line.speakerName}</strong>{line.speakerId === 'moderator' && <span className="role-pill">MODERATOR</span>}<time>{formatTime(line.timestamp)}</time></div><p>{line.text}</p></div></article>; })}{interim && <div className="interim-caption"><Mic size={14} /> {interim}<span>Listening…</span></div>}{activeSpeaker === 'thinking' && <div className="thinking"><span /><span /><span /> Someone is gathering their thoughts</div>}<div ref={transcriptEnd} /></div><div className="talk-bar">{micState === 'unsupported' && <p className="mic-notice">Live browser speech recognition is unavailable here. Try the latest Chrome or Brave, or use the text box for now.</p>}{micState === 'error' && <p className="mic-notice error">{micError || 'Speech recognition failed. Try Chrome or type your response.'}</p>}{micError && micState === 'idle' && <p className="mic-notice error">{micError}</p>}<div className="input-row"><button className={`mic-button ${micState === 'listening' ? 'recording' : ''}`} onClick={micState === 'listening' ? stopListening : startListening} aria-label={micState === 'listening' ? 'Stop microphone' : 'Start microphone'}>{micState === 'listening' ? <MicOff size={18} /> : <Mic size={18} />}</button><input id="typed-turn" placeholder={micState === 'listening' ? 'Listening — speak your point…' : 'Or type a point to join the discussion…'} onKeyDown={(event) => { if (event.key === 'Enter') { const input = event.currentTarget; void respond(input.value); input.value = ''; } }} /><button className="send-button" aria-label="Send message" onClick={() => { const input = document.getElementById('typed-turn') as HTMLInputElement; if (input.value.trim()) { void respond(input.value); input.value = ''; } }}><ArrowRight size={18} /></button></div><div className="input-hint"><span><span className="shortcut">SPACE</span> Hold to speak <i>·</i> or type your response</span><button onClick={endRoom}>End session <ArrowRight size={13} /></button></div></div></section>
+          <section className="discussion-panel"><div className="discussion-toolbar"><div><span className="live-dot" /> <strong>LIVE DISCUSSION</strong><span className="toolbar-sep">·</span><span>{transcript.filter((line) => line.isStudent).length} of your turns</span></div><span className="demo-chip">{aiConnected ? 'GEMINI VOICE' : 'DEMO RESPONSES'}</span></div><div className="transcript" aria-live="polite">{transcript.map((line) => { const agent = agents.find((item) => item.id === line.speakerId); return <article key={line.id} className={`transcript-message ${line.isStudent ? 'student-message' : ''}`}><div className="message-avatar">{agent ? <Avatar agent={agent} small /> : <div className="moderator-avatar tiny">DS</div>}</div><div className="message-body"><div className="message-meta"><strong>{line.speakerName}</strong>{line.speakerId === 'moderator' && <span className="role-pill">MODERATOR</span>}<time>{formatTime(line.timestamp)}</time></div><p>{line.text}</p></div></article>; })}{interim && <div className="interim-caption"><Mic size={14} /> {interim}<span>Listening…</span></div>}{activeSpeaker === 'thinking' && <div className="thinking"><span /><span /><span /> Someone is gathering their thoughts</div>}<div ref={transcriptEnd} /></div><div className="talk-bar">{micState === 'unsupported' && <p className="mic-notice">Live browser speech recognition is unavailable here. Try the latest Chrome or Brave, or use the text box for now.</p>}{micState === 'error' && <p className="mic-notice error">{micError || 'Speech recognition failed. Try Chrome or type your response.'}</p>}{micError && micState === 'idle' && <p className="mic-notice error">{micError}</p>}<div className="input-row"><button className={`mic-button ${micState === 'listening' ? 'recording' : ''}`} onClick={micState === 'listening' ? () => stopListening(true) : startListening} aria-label={micState === 'listening' ? 'Stop microphone' : 'Take the floor with microphone'}>{micState === 'listening' ? <MicOff size={18} /> : <Mic size={18} />}</button><input id="typed-turn" placeholder={micState === 'listening' ? 'Listening — speak your point…' : 'Or type a point to join the discussion…'} onFocus={interruptAgents} onKeyDown={(event) => { if (event.key === 'Enter') { const input = event.currentTarget; void respond(input.value); input.value = ''; } }} /><button className="send-button" aria-label="Send message" onClick={() => { const input = document.getElementById('typed-turn') as HTMLInputElement; if (input.value.trim()) { void respond(input.value); input.value = ''; } }}><ArrowRight size={18} /></button></div><div className="input-hint"><span><span className="shortcut">MIC</span> Tap to take the floor <i>·</i> or type your response</span><button onClick={endRoom}>End session <ArrowRight size={13} /></button></div></div></section>
         </div>
       </section>}
 

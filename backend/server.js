@@ -27,27 +27,27 @@ app.use(rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', leg
 
 const agents = {
   dominator: {
-    name: 'Rohan', voice: 'Fenrir', style: 'confident, energetic and clear',
+    name: 'Rohan', voice: 'Fenrir', style: 'conversational, assured, relaxed pace',
     persona: 'You speak up early, take clear positions, and challenge ideas respectfully. Do not dominate or talk over others.',
   },
   data_driven: {
-    name: 'Ananya', voice: 'Kore', style: 'calm, thoughtful and precise',
+    name: 'Ananya', voice: 'Kore', style: 'conversational, thoughtful, precise',
     persona: 'You ask for examples and evidence. Never invent numbers, quotes, studies, or facts. Say when evidence is uncertain.',
   },
   quiet_thinker: {
-    name: 'Vikram', voice: 'Charon', style: 'measured, gentle and reflective',
+    name: 'Vikram', voice: 'Charon', style: 'conversational, gentle, unhurried',
     persona: 'You speak less often, but add a concise synthesis or a useful overlooked point when invited by the discussion.',
   },
   wanderer: {
-    name: 'Pooja', voice: 'Leda', style: 'curious, warm and imaginative',
+    name: 'Pooja', voice: 'Leda', style: 'conversational, curious, warm',
     persona: 'You offer a short, memorable analogy or wider angle, then connect it back to the topic.',
   },
   connector: {
-    name: 'Mira', voice: 'Aoede', style: 'warm, composed and collaborative',
+    name: 'Mira', voice: 'Aoede', style: 'conversational, warm, collaborative',
     persona: 'You build on a specific previous point and connect different views. Do not simply agree with the latest speaker.',
   },
   moderator: {
-    name: 'Dr. Sharma', voice: 'Orus', style: 'neutral, composed and encouraging',
+    name: 'Dr. Sharma', voice: 'Orus', style: 'conversational, composed, brief',
     persona: 'You are a neutral discussion moderator. Keep the room on topic, invite quieter speakers, and speak briefly.',
   },
 };
@@ -60,7 +60,7 @@ app.get('/health', (_request, response) => {
 });
 
 app.post('/api/turn', async (request, response) => {
-  const { topic, language = 'en-hi', panel = [], transcript = [] } = request.body || {};
+  const { topic, language = 'en-hi', format = 'Open discussion', panel = [], transcript = [] } = request.body || {};
   if (!onlyString(topic, 240)) return response.status(400).json({ error: 'Add a topic under 240 characters.' });
   if (!Array.isArray(panel) || panel.length < 3 || panel.length > 5 || panel.some((id) => !agents[id] || id === 'moderator')) {
     return response.status(400).json({ error: 'Choose 3 to 5 known AI participants.' });
@@ -74,15 +74,21 @@ app.post('/api/turn', async (request, response) => {
     text: String(turn?.text || '').slice(0, 900),
     isStudent: Boolean(turn?.isStudent),
   }));
+  const languageGuidance = {
+    en: 'Speak in natural, conversational English only.',
+    'en-hi': 'Code-switch naturally between conversational English and Hindi in Roman script (Hinglish). Follow how the student speaks; do not translate every sentence.',
+    hi: 'Speak in natural, conversational Hindi using Devanagari script.',
+  }[language] || 'Speak in natural, conversational Hinglish, following how the student speaks.';
   const personaCards = panel.map((id) => ({ id, name: agents[id].name, traits: agents[id].persona }));
   const prompt = [
     'You are the turn manager for GD Arena, a student group discussion simulation.',
-    'Choose exactly one available AI participant to speak next, then write only that participant’s short reply.',
+    'Choose exactly one available AI participant to speak next, then write only that participant’s short reply. The room should feel like a discussion among real students, not a queue of isolated answers.',
     `Topic: ${topic}`,
-    `Room language: ${language === 'en-hi' ? 'English mixed naturally with conversational Hindi (Hinglish); follow the language the student uses and do not force translations.' : 'English'}`,
+    `Discussion format: ${format}`,
+    `Room language: ${languageGuidance}`,
     `Available personas: ${JSON.stringify(personaCards)}`,
     `Recent transcript: ${JSON.stringify(turns)}`,
-    'Avoid repeating the immediately previous AI speaker when another persona can contribute. Respond to another person where relevant. Do not interrupt or write narration. Keep it to one or two sentences. Never make up data or statistics.',
+    'React to what another participant just said, disagree respectfully when natural, and let different personalities take the floor without waiting for the student after every reply. Avoid repeating the immediately previous AI speaker when another persona can contribute. Do not interrupt or write narration. Speak like a student in a real GD: one concise, natural sentence, not an essay; contractions and an occasional conversational phrase are welcome. Never make up data or statistics.',
     'Return only a JSON object with speakerId, text, and replyToSpeakerId. speakerId must be one of the available ids. replyToSpeakerId must be a recent transcript speaker id or null.',
   ].join('\n');
 
