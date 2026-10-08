@@ -152,8 +152,8 @@ function updateSpeakerStage(document: Document, speakerId: string, quoteText: st
   const council = document.querySelector('.grid.grid-cols-5') || Array.from(document.querySelectorAll('main .flex.flex-wrap')).find((item) => item.children.length >= 4);
   const cards = council ? Array.from(council.children) as HTMLElement[] : [];
   const sourceCard = cards.find((card) => Array.from(card.querySelectorAll('span')).some((span) => span.textContent?.trim() === details?.card));
-  cards.forEach((card) => card.classList.toggle('gd-is-speaking', card === sourceCard && Boolean(details && speakerId !== 'moderator')));
-  if (details && speakerId !== 'student' && speakerId !== 'thinking' && speakerId !== 'moderator' && sourceCard && stageImage) {
+  cards.forEach((card) => card.classList.toggle('gd-is-speaking', card === sourceCard && Boolean(details)));
+  if (details && speakerId !== 'student' && speakerId !== 'thinking' && sourceCard && stageImage) {
     const sourceImage = sourceCard.querySelector<HTMLElement>('[style*="background-image"]');
     if (sourceImage) {
       const stageImageFrame = stageImage.parentElement as HTMLElement | null;
