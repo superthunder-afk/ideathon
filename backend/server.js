@@ -35,27 +35,27 @@ app.use(rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', leg
 
 const agents = {
   dominator: {
-    name: 'Rohan', voice: 'Fenrir', fishStyle: '[confident, assertive, energetic]', style: 'conversational, assured, relaxed pace',
+    name: 'Rohan', voice: 'Fenrir', fishVoice: '79d0bd3e4e5444b18f7b6d89b5927bf1', fishStyle: '[confident, assertive, energetic]', style: 'conversational, assured, relaxed pace',
     persona: 'You speak up early, take clear positions, and challenge ideas respectfully. Do not dominate or talk over others.',
   },
   data_driven: {
-    name: 'Ananya', voice: 'Kore', fishStyle: '[clear, thoughtful, precise]', style: 'conversational, thoughtful, precise',
+    name: 'Ananya', voice: 'Kore', fishVoice: '933563129e564b19a115bedd57b7406a', fishStyle: '[clear, thoughtful, precise]', style: 'conversational, thoughtful, precise',
     persona: 'You ask for examples and evidence. Never invent numbers, quotes, studies, or facts. Say when evidence is uncertain.',
   },
   quiet_thinker: {
-    name: 'Vikram', voice: 'Charon', fishStyle: '[gentle, reflective, unhurried]', style: 'conversational, gentle, unhurried',
+    name: 'Vikram', voice: 'Charon', fishVoice: 'bf322df2096a46f18c579d0baa36f41d', fishStyle: '[gentle, reflective, unhurried]', style: 'conversational, gentle, unhurried',
     persona: 'You speak less often, but add a concise synthesis or a useful overlooked point when invited by the discussion.',
   },
   wanderer: {
-    name: 'Pooja', voice: 'Leda', fishStyle: '[curious, expressive, warm]', style: 'conversational, curious, warm',
+    name: 'Pooja', voice: 'Leda', fishVoice: '9a9cf47702da476aa4629e2506d4a857', fishStyle: '[curious, expressive, warm]', style: 'conversational, curious, warm',
     persona: 'You offer a short, memorable analogy or wider angle, then connect it back to the topic.',
   },
   connector: {
-    name: 'Mira', voice: 'Aoede', fishStyle: '[warm, collaborative, friendly]', style: 'conversational, warm, collaborative',
+    name: 'Mira', voice: 'Aoede', fishVoice: 'e3cd384158934cc9a01029cd7d278634', fishStyle: '[warm, collaborative, friendly]', style: 'conversational, warm, collaborative',
     persona: 'You build on a specific previous point and connect different views. Do not simply agree with the latest speaker.',
   },
   moderator: {
-    name: 'Dr. Sharma', voice: 'Orus', fishStyle: '[composed, clear, reassuring]', style: 'conversational, composed, brief',
+    name: 'Dr. Sharma', voice: 'Orus', fishVoice: '536d3a5e000945adb7038665781a4aca', fishStyle: '[composed, clear, reassuring]', style: 'conversational, composed, brief',
     persona: 'You are a neutral discussion moderator. Keep the room on topic, invite quieter speakers, and speak briefly.',
   },
 };
@@ -128,6 +128,7 @@ app.post('/api/speech', async (request, response) => {
         body: JSON.stringify({
           model: openRouterTtsModel,
           input: `${agents[speakerId].fishStyle} ${text.trim()}`,
+          voice: agents[speakerId].fishVoice,
           response_format: 'mp3',
         }),
         signal: AbortSignal.timeout(12_000),
