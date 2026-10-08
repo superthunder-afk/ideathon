@@ -40,6 +40,7 @@ interface StitchExperienceProps {
   micState: 'idle' | 'listening' | 'unsupported' | 'error';
   micError: string;
   activeSpeaker: string;
+  firstTurn: boolean;
   studentWords: number;
   totalWords: number;
   report: GDReport | null;
@@ -99,6 +100,9 @@ export default function StitchExperience(props: StitchExperienceProps) {
       transcript={transcript}
       seconds={seconds}
       activeSpeaker={activeSpeaker}
+      firstTurn={props.firstTurn}
+      interim={interim}
+      micError={micError}
       micState={micState}
       onOpenRoom={onOpenRoom}
       onOpenSetup={onOpenSetup}

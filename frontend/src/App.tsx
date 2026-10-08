@@ -74,6 +74,7 @@ function App() {
   const [micState, setMicState] = useState<'idle' | 'listening' | 'unsupported' | 'error'>('idle');
   const [micError, setMicError] = useState('');
   const [interim, setInterim] = useState('');
+  const [firstTurn, setFirstTurn] = useState(false);
   const [activeSpeaker, setActiveSpeaker] = useState('moderator');
   const [seconds, setSeconds] = useState(8 * 60);
   const [paused, setPaused] = useState(false);
@@ -88,6 +89,7 @@ function App() {
   const recognition = useRef<SpeechRecognitionLike | null>(null);
   const autoListenRef = useRef(false);
   const studentSpeechActiveRef = useRef(false);
+  const interimSpeechRef = useRef('');
   const userSpeechTimeoutRef = useRef<number | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -99,6 +101,8 @@ function App() {
   const kokoroRef = useRef<KokoroTTS | null>(null);
   const kokoroPromiseRef = useRef<Promise<KokoroTTS> | null>(null);
   const transcriptRef = useRef<TranscriptEntry[]>([]);
+  const sessionTopicRef = useRef(topics[0].topic);
+  const sessionPanelRef = useRef<Agent[]>(agents.slice(0, 4));
   const discussionTokenRef = useRef(0);
   const turnAbortRef = useRef<AbortController | null>(null);
   const speechAbortRef = useRef<AbortController | null>(null);
@@ -409,12 +413,16 @@ function App() {
     userSpeechTimeoutRef.current = window.setTimeout(() => {
       if (!studentSpeechActiveRef.current || !roomActiveRef.current) return;
       studentSpeechActiveRef.current = false;
+      const draft = interimSpeechRef.current.trim();
       setInterim('');
-      void runDiscussion(discussionTokenRef.current);
+      interimSpeechRef.current = '';
+      if (draft) void respond(draft);
+      else setActiveSpeaker('student');
     }, 8000);
   };
   const clearStudentSpeech = () => {
     studentSpeechActiveRef.current = false;
+    interimSpeechRef.current = '';
     if (userSpeechTimeoutRef.current !== null) window.clearTimeout(userSpeechTimeoutRef.current);
     userSpeechTimeoutRef.current = null;
   };
@@ -470,30 +478,25 @@ function App() {
 
   const openRoom = (topicOverride?: string, panelSizeOverride?: number) => {
     unlockAudio();
-    const roomTopic = topicOverride?.trim() || selectedTopic;
-    const roomPanel = agents.slice(0, panelSizeOverride ?? panelSize);
-    const token = interruptAgents();
+    sessionTopicRef.current = topicOverride?.trim() || selectedTopic;
+    sessionPanelRef.current = agents.slice(0, panelSizeOverride ?? panelSize);
+    interruptAgents();
     transcriptRef.current = [];
-    const openingText = `Welcome, everyone. Today we are discussing: “${roomTopic}”. Keep your points concise, listen to each other, and make space for different views. You have eight minutes. Who would like to open?`;
-    const opening: TranscriptEntry = {
-      id: crypto.randomUUID(), timestamp: 0, speakerId: 'moderator', speakerName: 'Dr. Sharma · Moderator',
-      text: openingText, isStudent: false,
-    };
-    transcriptRef.current = [opening];
-    setTranscript(transcriptRef.current); setSeconds(8 * 60); secondsRef.current = 8 * 60; setPaused(false); setScreen('room'); roomActiveRef.current = true; setActiveSpeaker('moderator');
-    void speak(opening.text, 'moderator', token).then((completed) => {
-      if (completed && token === discussionTokenRef.current) void runDiscussion(token, roomTopic, roomPanel);
-    });
+    setTranscript([]); setInterim(''); interimSpeechRef.current = ''; setFirstTurn(true);
+    setSeconds(8 * 60); secondsRef.current = 8 * 60; setPaused(false); setScreen('room'); roomActiveRef.current = true; setActiveSpeaker('student');
+    /* Begin is a deliberate user gesture, so start hands-free speech capture here. */
+    startListening();
   };
 
   const respond = async (studentText: string) => {
     if (!studentText.trim()) return;
     clearStudentSpeech();
+    setFirstTurn(false);
     unlockAudio();
     const token = interruptAgents();
     const studentLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - secondsRef.current, speakerId: 'student', speakerName: 'You', text: studentText.trim(), isStudent: true };
     addEntry(studentLine);
-    void runDiscussion(token);
+    void runDiscussion(token, sessionTopicRef.current, sessionPanelRef.current);
   };
 
   const startListening = () => {
@@ -521,8 +524,9 @@ function App() {
         const finalText = finalParts.join(' ').replace(/\s+/g, ' ').trim();
         const interimText = interimParts.join(' ').replace(/\s+/g, ' ').trim();
         setInterim(interimText);
+        interimSpeechRef.current = interimText;
         if (interimText) markStudentSpeech();
-        if (finalText) { setInterim(''); void respond(finalText); }
+        if (finalText) { setInterim(''); interimSpeechRef.current = ''; void respond(finalText); }
       };
       instance.onerror = (event) => {
         const messages: Record<string, string> = {
@@ -541,6 +545,7 @@ function App() {
         setMicError(messages[event.error || ''] || event.message || `Speech recognition failed${event.error ? ` (${event.error})` : ''}. Try Chrome or type your response.`);
         setMicState(event.error === 'no-speech' || event.error === 'aborted' ? 'idle' : 'error');
         setInterim('');
+        interimSpeechRef.current = '';
       };
       instance.onend = () => {
         if (autoListenRef.current && roomActiveRef.current) {
@@ -556,10 +561,12 @@ function App() {
   };
 
   const stopListening = (_resumeDiscussion = false) => {
+    const draft = interimSpeechRef.current.trim();
     autoListenRef.current = false;
     stopMicLevelMonitor();
     clearStudentSpeech();
     recognition.current?.stop(); setMicState('idle'); setMicError(''); setInterim('');
+    if (draft && roomActiveRef.current) void respond(draft);
   };
   const endRoom = async () => {
     stopListening(); interruptAgents(); roomActiveRef.current = false; setScreen('report'); setReport(null);
@@ -609,6 +616,7 @@ function App() {
       micState={micState}
       micError={micError}
       activeSpeaker={activeSpeaker}
+      firstTurn={firstTurn}
       studentWords={studentWords}
       totalWords={totalWords}
       report={report}

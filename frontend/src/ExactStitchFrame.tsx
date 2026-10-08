@@ -8,6 +8,9 @@ type Props = {
   transcript: TranscriptEntry[];
   seconds: number;
   activeSpeaker: string;
+  firstTurn: boolean;
+  interim: string;
+  micError: string;
   micState: 'idle' | 'listening' | 'unsupported' | 'error';
   onOpenRoom: (topic?: string, panelSize?: number) => void;
   onOpenSetup: () => void;
@@ -38,6 +41,8 @@ function syncLiveDocument(document: Document, props: Props) {
     return;
   }
   if (props.screen !== 'room') return;
+  syncFirstTurnPrompt(document, props);
+  syncLiveTranscript(document, props);
   const send = () => {
     const field = document.querySelector('[contenteditable="true"], textarea, input[type="text"]') as HTMLElement | HTMLInputElement | null;
     const text = fieldValue(field);
@@ -73,7 +78,7 @@ function syncLiveDocument(document: Document, props: Props) {
     /^\d{2}:\d{2}$/.test(item.textContent?.trim() || ''),
   );
   if (timer) timer.textContent = `${pad(Math.floor(props.seconds / 60))}:${pad(props.seconds % 60)}`;
-  updateSpeakerStage(document, props.activeSpeaker, last?.text || 'The moderator is opening the discussion.');
+  updateSpeakerStage(document, props.activeSpeaker, last?.text || (props.firstTurn ? 'You have the floor. Share your opening point when you are ready.' : 'The moderator is opening the discussion.'));
   Array.from(document.querySelectorAll('span')).forEach((span) => {
     if (span.textContent?.trim() === '5 Listening') span.textContent = `${props.panelSize + 1} Listening`;
   });
@@ -108,6 +113,99 @@ function syncLiveDocument(document: Document, props: Props) {
     members = Array.from(council.children).filter((item) => item !== moderator) as HTMLElement[];
     members.forEach((member, index) => { member.style.display = index < props.panelSize ? '' : 'none'; });
   }
+}
+
+function syncFirstTurnPrompt(document: Document, props: Props) {
+  let prompt = document.querySelector<HTMLElement>('[data-gd-first-turn-prompt]');
+  if (!prompt) {
+    prompt = document.createElement('aside');
+    prompt.dataset.gdFirstTurnPrompt = 'true';
+    prompt.setAttribute('role', 'status');
+    prompt.setAttribute('aria-live', 'polite');
+    const copy = document.createElement('div');
+    copy.innerHTML = '<strong>You’re up first</strong><span data-gd-prompt-copy></span>';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = '×';
+    close.setAttribute('aria-label', 'Dismiss first turn reminder');
+    close.onclick = () => { if (prompt) prompt.dataset.dismissed = 'true'; };
+    prompt.append(copy, close);
+    document.body.append(prompt);
+  }
+  const copy = prompt.querySelector<HTMLElement>('[data-gd-prompt-copy]');
+  if (copy) {
+    copy.textContent = props.micState === 'listening'
+      ? 'Speak your opening point. Your words will appear below; the AI panel will answer when you finish.'
+      : props.micError
+        ? 'The mic did not start. Use the text box below, or try the mic again.'
+        : 'Speak or type an opening point. The AI panel is listening and will answer when you finish.';
+  }
+  prompt.style.display = props.firstTurn && prompt.dataset.dismissed !== 'true' ? 'flex' : 'none';
+  const styles = document.getElementById('gd-live-room-ui-style') || document.createElement('style');
+  styles.id = 'gd-live-room-ui-style';
+  styles.textContent = `
+    [data-gd-first-turn-prompt] { position:fixed; z-index:9999; top:14px; right:18px; width:min(390px,calc(100vw - 28px)); display:flex; align-items:flex-start; gap:14px; padding:13px 14px; border:1px solid rgba(159,60,22,.16); border-radius:12px; background:rgba(255,255,255,.97); color:#352b27; box-shadow:0 10px 35px rgba(55,35,26,.12); font:12px/1.5 Inter,system-ui,sans-serif; animation:gd-prompt-enter 240ms ease-out both; }
+    [data-gd-first-turn-prompt] > div { display:flex; flex-direction:column; gap:2px; }
+    [data-gd-first-turn-prompt] strong { color:#9f3c16; font-size:12px; }
+    [data-gd-first-turn-prompt] button { flex:0 0 22px; border:0; background:transparent; color:#857a75; font:20px/1 system-ui,sans-serif; cursor:pointer; }
+    [data-gd-live-chat] { width:min(660px,calc(100% - 16px)); max-height:148px; overflow:auto; margin:18px auto 0; padding:10px 12px; border-top:1px solid rgba(138,114,106,.22); text-align:left; font:12px/1.45 Inter,system-ui,sans-serif; scrollbar-width:thin; }
+    [data-gd-chat-turn] { padding:8px 10px; margin:5px 0; border-radius:9px; background:#f6f3f2; color:#453a35; }
+    [data-gd-chat-turn][data-student="true"] { background:#f9eee8; margin-left:22px; }
+    [data-gd-chat-name] { display:block; margin-bottom:2px; color:#9f3c16; font-size:10px; font-weight:650; }
+    [data-gd-chat-turn][data-student="true"] [data-gd-chat-name] { color:#6d5a4b; }
+    [data-gd-chat-draft] { border:1px dashed rgba(159,60,22,.3); background:#fffaf7; color:#78665c; font-style:italic; }
+    [data-gd-chat-draft] [data-gd-chat-name] { color:#9f3c16; }
+    @keyframes gd-prompt-enter { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+    @media(max-width:640px) { [data-gd-first-turn-prompt] { top:8px; right:10px; } [data-gd-live-chat] { max-height:120px; font-size:11px; } }
+  `;
+  if (!styles.isConnected) document.head.append(styles);
+}
+
+function syncLiveTranscript(document: Document, props: Props) {
+  const quote = document.querySelector('main blockquote');
+  const host = quote?.parentElement;
+  if (!host) return;
+  let chat = host.querySelector<HTMLElement>('[data-gd-live-chat]');
+  if (!chat) {
+    chat = document.createElement('div');
+    chat.dataset.gdLiveChat = 'true';
+    chat.setAttribute('role', 'log');
+    chat.setAttribute('aria-label', 'Live discussion transcript');
+    chat.setAttribute('aria-live', 'polite');
+    host.append(chat);
+  }
+  const turns = props.transcript.slice(-5);
+  const key = `${turns.map((turn) => `${turn.id}:${turn.text}`).join('|')}|${props.interim}|${props.micState}`;
+  if (chat.dataset.renderKey === key) return;
+  chat.dataset.renderKey = key;
+  chat.replaceChildren();
+  for (const turn of turns) {
+    const row = document.createElement('article');
+    row.dataset.gdChatTurn = 'true';
+    row.dataset.student = String(turn.isStudent);
+    const name = document.createElement('span');
+    name.dataset.gdChatName = 'true';
+    name.textContent = turn.isStudent ? 'You' : turn.speakerName;
+    const text = document.createElement('span');
+    text.textContent = turn.text;
+    row.append(name, text);
+    chat.append(row);
+  }
+  if (props.interim.trim() && props.micState === 'listening') {
+    const row = document.createElement('article');
+    row.dataset.gdChatTurn = 'true';
+    row.dataset.gdStudent = 'true';
+    row.dataset.gdChatDraft = 'true';
+    const name = document.createElement('span');
+    name.dataset.gdChatName = 'true';
+    name.textContent = 'You · LIVE TRANSCRIPT';
+    const text = document.createElement('span');
+    text.textContent = props.interim;
+    row.append(name, text);
+    chat.append(row);
+  }
+  chat.scrollTop = chat.scrollHeight;
+  chat.style.display = turns.length || props.interim.trim() ? 'block' : 'none';
 }
 
 const speakerDetails: Record<string, { name: string; role: string; card: string }> = {
@@ -259,7 +357,7 @@ export default function ExactStitchFrame(props: Props) {
   useEffect(() => {
     const document = frame.current?.contentDocument;
     if (document) syncLiveDocument(document, props);
-  }, [props.screen, props.selectedTopic, props.panelSize, props.transcript, props.seconds, props.micState, props.activeSpeaker, mobile]);
+  }, [props.screen, props.selectedTopic, props.panelSize, props.transcript, props.seconds, props.micState, props.activeSpeaker, props.firstTurn, props.interim, props.micError, mobile]);
 
   const onFrameLoad = () => {
     const document = frame.current?.contentDocument;
