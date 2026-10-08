@@ -102,7 +102,7 @@ app.post('/api/turn', async (request, response) => {
     const result = await genai.models.generateContent({
       model: textModel,
       contents: prompt,
-      config: { responseMimeType: 'application/json', maxOutputTokens: 100 },
+      config: { responseMimeType: 'application/json', maxOutputTokens: 180 },
     });
     const parsed = JSON.parse(getText(result));
     if (!panel.includes(parsed.speakerId) || !onlyString(parsed.text, 700)) throw new Error('Gemini returned an invalid speaker turn.');
