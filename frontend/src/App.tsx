@@ -71,7 +71,9 @@ function App() {
     return () => window.clearInterval(timer);
   }, [screen, paused]);
 
-  useEffect(() => transcriptEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), [transcript, interim]);
+  useEffect(() => {
+    transcriptEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [transcript, interim]);
 
   useEffect(() => {
     if (!API_BASE_URL) return;

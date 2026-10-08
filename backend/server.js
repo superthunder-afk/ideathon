@@ -160,14 +160,14 @@ app.post('/api/report', async (request, response) => {
     `Student turns: ${JSON.stringify(studentTurns)}`,
     `Other turns for context: ${JSON.stringify(transcript.filter((turn) => !turn?.isStudent).slice(-30).map((turn) => ({ speakerName: turn.speakerName, text: turn.text, timestamp: turn.timestamp })))}`,
     `Assess these categories: ${JSON.stringify(rubric)}`,
-    'Return only JSON with overallScore, categories, missedOpportunities. Each category needs scoreOutOf10 from 0 to 10, concise feedback, and citations array with exact quote, context, and timestampMs. Quotes must be copied verbatim from one of the student turns. Never invent quotes, events, or statistics. If evidence is insufficient, say so briefly and return no citation for that category. missedOpportunities must be a short list grounded in the transcript.',
+    'Return only JSON with overallScore, categories, missedOpportunities. Each category needs scoreOutOf10 from 0 to 10, concise feedback, and citations array with exact quote, context, and timestampMs. When student turns exist, include at least one citation for every category; copy a complete sentence verbatim if needed. Quotes must be copied verbatim from one of the student turns. Never invent quotes, events, or statistics. If evidence is insufficient, say so briefly and cite the closest student moment as limited evidence. missedOpportunities must be a short list grounded in the transcript.',
   ].join('\n');
 
   try {
     const result = await genai.models.generateContent({
       model: textModel,
       contents: prompt,
-      config: { responseMimeType: 'application/json', maxOutputTokens: 900 },
+      config: { responseMimeType: 'application/json', maxOutputTokens: 1400 },
     });
     const parsed = JSON.parse(getText(result));
     const categories = Object.fromEntries(categoryKeys.map((key) => {
@@ -178,6 +178,15 @@ app.post('/api/report', async (request, response) => {
         if (!sourceTurn) return [];
         return [{ quote, context: String(citation.context || '').slice(0, 240), timestampMs: sourceTurn.timestampMs }];
       }).slice(0, 3) : [];
+      if (citations.length === 0 && studentTurns.length > 0) {
+        const sourceTurn = key === 'endingStrongly' ? studentTurns.at(-1) : studentTurns[0];
+        const quote = sourceTurn.text.slice(0, 180);
+        citations.push({
+          quote,
+          context: `Exact transcript excerpt used as evidence for ${rubric[key].split(':')[0].toLowerCase()}.`,
+          timestampMs: sourceTurn.timestampMs,
+        });
+      }
       const score = Number(category.scoreOutOf10);
       const feedback = onlyString(category.feedback, 600) ? category.feedback.trim() : 'There is not enough evidence in this session to assess this point yet.';
       return [key, { title: rubric[key].split(':')[0], scoreOutOf10: Number.isFinite(score) ? Math.max(0, Math.min(10, Math.round(score))) : 0, feedback, citations }];
