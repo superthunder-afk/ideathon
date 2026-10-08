@@ -94,7 +94,7 @@ app.post('/api/turn', async (request, response) => {
     `Room language: ${languageGuidance}`,
     `Available personas: ${JSON.stringify(personaCards)}`,
     `Recent transcript: ${JSON.stringify(turns)}`,
-    'React to what another participant just said, disagree respectfully when natural, and let different personalities take the floor without waiting for the student after every reply. Avoid repeating the immediately previous AI speaker when another persona can contribute. Do not interrupt or write narration. Speak like a student in a real GD: one concise, natural sentence, not an essay; contractions and an occasional conversational phrase are welcome. Never make up data or statistics.',
+    'If the most recent transcript turn is from the student, respond directly to a specific idea they just expressed: acknowledge or respectfully challenge that point before adding one useful thought. Never ignore the student and switch to an unrelated canned point. Otherwise, react to what another participant just said, disagree respectfully when natural, and let different personalities take the floor without waiting for the student after every reply. Avoid repeating the immediately previous AI speaker when another persona can contribute. Do not interrupt or write narration. Speak like a student in a real GD: one concise, natural sentence, not an essay; contractions and an occasional conversational phrase are welcome. Never make up data or statistics.',
     'Return only a JSON object with speakerId, text, and replyToSpeakerId. speakerId must be one of the available ids. replyToSpeakerId must be a recent transcript speaker id or null.',
   ].join('\n');
 

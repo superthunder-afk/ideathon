@@ -43,13 +43,25 @@ const kokoroVoices = {
   wanderer: 'af_bella', connector: 'af_sarah', moderator: 'bm_george',
 } as const;
 
-const demoReplies = [
-  { agent: 'data_driven' as PersonalityType, text: 'I agree that convenience matters, but we should separate short-term efficiency from long-term impact. What kind of work are we talking about, and who benefits from the change?' },
-  { agent: 'quiet_thinker' as PersonalityType, text: 'Building on that point, I think the transition matters as much as the outcome. A gradual approach with training could make this less of an either-or question.' },
-  { agent: 'wanderer' as PersonalityType, text: 'That reminds me of how calculators changed classrooms. The tool did not remove the need to understand maths; it changed which skills mattered most.' },
-  { agent: 'dominator' as PersonalityType, text: 'Let me push back a little. If we wait until there is no risk, we may miss real improvements. We should compare the cost of acting with the cost of doing nothing.' },
-  { agent: 'connector' as PersonalityType, text: 'I hear two useful ideas here: move carefully, but do not freeze. Maybe the common ground is to measure outcomes and keep a human fallback.' },
-];
+function makeFallbackReply(panel: Agent[], transcript: TranscriptEntry[], turn: number) {
+  const lastTurn = transcript[transcript.length - 1];
+  const lastStudent = [...transcript].reverse().find((line) => line.isStudent);
+  const speaker = panel.find((agent) => agent.id !== lastTurn?.speakerId) || panel[turn % Math.max(1, panel.length)];
+  if (lastTurn?.isStudent && lastStudent) {
+    const point = lastStudent.text.trim().replace(/[.!?]+$/, '').split(/\s+/).slice(0, 12).join(' ');
+    return {
+      speakerId: speaker.id,
+      speakerName: speaker.name,
+      text: `Your point about ${point} makes sense. I’d also consider who could be left out and what support would help them benefit.`,
+    };
+  }
+  const previousName = lastTurn?.speakerName || 'the previous speaker';
+  return {
+    speakerId: speaker.id,
+    speakerName: speaker.name,
+    text: `Building on ${previousName}’s point, we should think about how that idea would work in practice and who it would help most.`,
+  };
+}
 
 function App() {
   const [screen, setScreen] = useState<'home' | 'setup' | 'room' | 'report'>('home');
@@ -65,7 +77,6 @@ function App() {
   const [activeSpeaker, setActiveSpeaker] = useState('moderator');
   const [seconds, setSeconds] = useState(8 * 60);
   const [paused, setPaused] = useState(false);
-  const [currentAgent, setCurrentAgent] = useState(0);
   const [speechOn, setSpeechOn] = useState(true);
   const [speechEngine, setSpeechEngine] = useState<SpeechEngine>('sarvam');
   const [kokoroStatus, setKokoroStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
@@ -216,7 +227,7 @@ function App() {
           const finishPlayback = playbackDoneRef.current;
           source.onended = () => {
             if (audioSourceRef.current === source) audioSourceRef.current = null;
-            if (token === discussionTokenRef.current) setActiveSpeaker('');
+            if (token === discussionTokenRef.current) setActiveSpeaker('thinking');
             finishPlayback?.();
           };
           source.start();
@@ -268,7 +279,7 @@ function App() {
               const finishPlayback = playbackDoneRef.current;
               source.onended = () => {
                 if (audioSourceRef.current === source) audioSourceRef.current = null;
-                if (token === discussionTokenRef.current) setActiveSpeaker('');
+                if (token === discussionTokenRef.current) setActiveSpeaker('thinking');
                 finishPlayback?.();
               };
               source.start();
@@ -280,7 +291,7 @@ function App() {
               const playback = waitForPlayback();
               const finishPlayback = playbackDoneRef.current;
               audio.onended = () => {
-                if (token === discussionTokenRef.current) setActiveSpeaker('');
+                if (token === discussionTokenRef.current) setActiveSpeaker('thinking');
                 finishPlayback?.();
               };
               audio.onerror = () => finishPlayback?.();
@@ -337,7 +348,7 @@ function App() {
     const playback = waitForPlayback();
     const finishPlayback = playbackDoneRef.current;
     utterance.onend = () => {
-      if (token === discussionTokenRef.current) setActiveSpeaker('');
+      if (token === discussionTokenRef.current) setActiveSpeaker('thinking');
       finishPlayback?.();
     };
     utterance.onerror = () => finishPlayback?.();
@@ -347,35 +358,37 @@ function App() {
   };
 
   const runDiscussion = async (token: number, topicOverride = selectedTopic, panelOverride = panel) => {
+    let fallbackTurn = 0;
+    let aiFailedThisRun = false;
     while (token === discussionTokenRef.current && roomActiveRef.current && secondsRef.current > 0) {
       setActiveSpeaker('thinking');
       let reply: { speakerId: PersonalityType; speakerName: string; text: string } | null = null;
       try {
-        if (aiConnected && API_BASE_URL) {
+        if (aiConnected && !aiFailedThisRun && API_BASE_URL) {
           const controller = new AbortController();
           turnAbortRef.current = controller;
-          const response = await fetch(`${API_BASE_URL}/api/turn`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-            body: JSON.stringify({ topic: topicOverride, language, panel: panelOverride.map((agent) => agent.id), transcript: transcriptRef.current }),
-          });
-          if (!response.ok) throw new Error('AI turn unavailable');
-          reply = await response.json();
+          const timeout = window.setTimeout(() => controller.abort(), 12000);
+          try {
+            const response = await fetch(`${API_BASE_URL}/api/turn`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+              body: JSON.stringify({ topic: topicOverride, language, panel: panelOverride.map((agent) => agent.id), transcript: transcriptRef.current }),
+            });
+            if (!response.ok) throw new Error('AI turn unavailable');
+            reply = await response.json();
+          } finally {
+            window.clearTimeout(timeout);
+          }
         }
       } catch {
         if (token !== discussionTokenRef.current) return;
-        setAiConnected(false);
+        aiFailedThisRun = true;
       }
       if (token !== discussionTokenRef.current) return;
       if (!reply) {
-        const available = demoReplies.filter((item) => panelOverride.some((agent) => agent.id === item.agent));
+        const available = agents.filter((agent) => panelOverride.some((selected) => selected.id === agent.id));
         if (!available.length) return;
-        const fallback = available[currentAgent % available.length];
-        reply = {
-          speakerId: fallback.agent,
-          speakerName: agents.find((agent) => agent.id === fallback.agent)?.name || 'AI participant',
-          text: fallback.text,
-        };
-        setCurrentAgent((value) => value + 1);
+        reply = makeFallbackReply(available, transcriptRef.current, fallbackTurn);
+        fallbackTurn += 1;
       }
       if (reply) {
         const aiLine: TranscriptEntry = { id: crypto.randomUUID(), timestamp: 8 * 60 - secondsRef.current, speakerId: reply.speakerId, speakerName: reply.speakerName, text: reply.text, isStudent: false };
@@ -496,13 +509,17 @@ function App() {
       instance.continuous = true; instance.interimResults = true;
       instance.lang = 'en-IN';
       instance.onresult = (event) => {
-        let finalText = ''; let interimText = '';
+        const finalParts: string[] = []; const interimParts: string[] = [];
         const firstChangedResult = typeof event.resultIndex === 'number' ? event.resultIndex : 0;
-        for (let i = event.results.length - 1; i >= firstChangedResult; i -= 1) {
+        for (let i = firstChangedResult; i < event.results.length; i += 1) {
           const result = event.results[i];
-          if (result.isFinal) finalText = result[0].transcript;
-          else interimText = result[0].transcript;
+          const text = result[0]?.transcript?.trim();
+          if (!text) continue;
+          if (result.isFinal) finalParts.push(text);
+          else interimParts.push(text);
         }
+        const finalText = finalParts.join(' ').replace(/\s+/g, ' ').trim();
+        const interimText = interimParts.join(' ').replace(/\s+/g, ' ').trim();
         setInterim(interimText);
         if (interimText) markStudentSpeech();
         if (finalText) { setInterim(''); void respond(finalText); }
@@ -558,7 +575,7 @@ function App() {
     } catch { setAiConnected(false); }
     finally { setReportLoading(false); }
   };
-  const reset = () => { stopListening(); interruptAgents(); roomActiveRef.current = false; transcriptRef.current = []; setTranscript([]); setReport(null); setReportLoading(false); setScreen('setup'); setMicState('idle'); setCurrentAgent(0); };
+  const reset = () => { stopListening(); interruptAgents(); roomActiveRef.current = false; transcriptRef.current = []; setTranscript([]); setReport(null); setReportLoading(false); setScreen('setup'); setMicState('idle'); };
   return (
     <StitchExperience
       screen={screen}

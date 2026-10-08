@@ -121,7 +121,9 @@ const speakerDetails: Record<string, { name: string; role: string; card: string 
 
 function updateSpeakerStage(document: Document, speakerId: string, quoteText: string) {
   const labels = Array.from(document.querySelectorAll('main span'));
-  const nameNode = labels.find((node) => ['The Challenger', 'Dr. Sharma', 'Rohan', 'Ananya', 'Vikram', 'Pooja', 'Mira', 'You', 'The council is choosing a speaker'].includes(node.textContent?.trim() || ''));
+  const nameNode = document.querySelector<HTMLElement>('[data-gd-speaker-name]')
+    || labels.find((node) => ['The Challenger', 'Dr. Sharma', 'Dr. Sharma · Moderator', 'Rohan', 'Ananya', 'Vikram', 'Pooja', 'Mira', 'You', 'Room is ready', 'The council is choosing a speaker'].includes(node.textContent?.trim() || '')) as HTMLElement | undefined;
+  nameNode?.setAttribute('data-gd-speaker-name', 'true');
   const stageCard = document.querySelector<HTMLElement>('.pink-speaker-glow') || (nameNode?.parentElement as HTMLElement | null);
   const speakerName = nameNode;
   const stageImage = (document.querySelector('.pink-speaker-glow [style*="background-image"]') || stageCard?.querySelector<HTMLElement>('[style*="background-image"]')) as HTMLElement | null;
@@ -196,8 +198,10 @@ function updateSpeakerStage(document: Document, speakerId: string, quoteText: st
   }
   document.documentElement.dataset.gdActiveSpeaker = speakerId;
 
-  const status = labels.find((node) => ['Speaking now', 'Choosing next speaker', 'The Challenger · Speaking'].includes(node.textContent?.trim() || ''));
-  if (status) status.textContent = speakerId === 'thinking' ? 'Choosing next speaker' : speakerId === 'student' ? 'Your turn' : 'Speaking now';
+  const status = document.querySelector<HTMLElement>('[data-gd-speaker-status]')
+    || labels.find((node) => ['Speaking now', 'Choosing next speaker', 'The Challenger · Speaking', 'Your turn', 'Listening for your point', 'Room is ready'].includes(node.textContent?.trim() || '')) as HTMLElement | undefined;
+  status?.setAttribute('data-gd-speaker-status', 'true');
+  if (status) status.textContent = speakerId === 'thinking' ? 'Choosing next speaker' : speakerId === 'student' ? 'Your turn' : speakerId ? 'Speaking now' : 'Next speaker soon';
   const css = document.getElementById('gd-stage-motion-style') || document.createElement('style');
   css.id = 'gd-stage-motion-style';
   css.textContent = `
